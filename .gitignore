@@ -1,0 +1,23 @@
+.claude
+.dist
+.vscode
+
+# Python / Django
+*.pyc
+__pycache__/
+db.sqlite3
+/media
+/staticfiles
+venv/
+.env
+
+# Node / React
+node_modules/
+dist/
+build/
+.env.local
+.env.development.local
+.env.production.local
+
+
+only_frontend/

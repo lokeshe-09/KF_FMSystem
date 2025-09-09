@@ -1,0 +1,1631 @@
+import logging
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale
+from django.contrib.auth import get_user_model
+User = get_user_model()
+from .serializers import (
+    FarmSerializer, CreateFarmSerializer, DailyTaskSerializer, CreateDailyTaskSerializer, 
+    NotificationSerializer, SprayIrrigationLogSerializer, CreateSprayIrrigationLogSerializer, 
+    SprayScheduleSerializer, CreateSprayScheduleSerializer, UpdateSprayScheduleSerializer,
+    CropStageSerializer, CreateCropStageSerializer, FertigationSerializer, CreateFertigationSerializer,
+    WorkerSerializer, CreateWorkerSerializer, WorkerTaskSerializer, CreateWorkerTaskSerializer, UpdateWorkerTaskSerializer,
+    IssueReportSerializer, CreateIssueReportSerializer, UpdateIssueReportSerializer,
+    AdminNotificationSerializer, ExpenditureSerializer, CreateExpenditureSerializer, UpdateExpenditureSerializer,
+    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer
+)
+from datetime import date
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+logger = logging.getLogger(__name__)
+
+
+def create_admin_notification(admin_user, title, message, notification_type, source_user=None, source_farm=None, related_object_id=None, related_model_name=None):
+    """
+    Helper function to create persistent admin notifications
+    """
+    return AdminNotification.objects.create(
+        admin_user=admin_user,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        source_user=source_user,
+        source_farm=source_farm,
+        related_object_id=related_object_id,
+        related_model_name=related_model_name
+    )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_farm(request):
+    if not (request.user.user_type == 'admin' or request.user.is_superuser):
+        return Response({'error': 'Only admins and superusers can create farms'}, status=status.HTTP_403_FORBIDDEN)
+    
+    serializer = CreateFarmSerializer(data=request.data)
+    if serializer.is_valid():
+        farm = serializer.save(created_by=request.user)
+        return Response(FarmSerializer(farm).data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_farms(request):
+    
+    if request.user.is_superuser:
+        farms = Farm.objects.filter(is_active=True)
+    elif request.user.user_type == 'admin':
+        farms = Farm.objects.filter(created_by=request.user, is_active=True)
+    else:
+        # Farm users access farms through the assigned_farms relationship
+        farms = request.user.assigned_farms.filter(is_active=True)
+    
+    serializer = FarmSerializer(farms, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def farm_detail(request, farm_id):
+        
+    try:
+        if request.user.is_superuser:
+            farm = Farm.objects.get(id=farm_id, is_active=True)
+        elif request.user.user_type == 'admin':
+            farm = Farm.objects.get(id=farm_id, created_by=request.user, is_active=True)
+        else:
+            # Farm users access farms through the assigned_farms relationship
+            farm = request.user.assigned_farms.get(id=farm_id, is_active=True)
+    except Farm.DoesNotExist:
+        return Response({'error': 'Farm not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = FarmSerializer(farm)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        if not (request.user.user_type == 'admin' or request.user.is_superuser):
+            return Response({'error': 'Only admins and superusers can update farms'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Additional check for admins - they can only update their own farms
+        if request.user.user_type == 'admin' and farm.created_by != request.user:
+            return Response({'error': 'You can only update farms you created'}, status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = CreateFarmSerializer(farm, data=request.data, partial=True)
+        if serializer.is_valid():
+            farm = serializer.save()
+            return Response(FarmSerializer(farm).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        if not (request.user.user_type == 'admin' or request.user.is_superuser):
+            return Response({'error': 'Only admins and superusers can delete farms'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Additional check for admins - they can only delete their own farms
+        if request.user.user_type == 'admin' and farm.created_by != request.user:
+            return Response({'error': 'You can only delete farms you created'}, status=status.HTTP_403_FORBIDDEN)
+        
+        farm.is_active = False
+        farm.save()
+        return Response({'message': 'Farm deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def daily_tasks(request):
+    
+    if request.method == 'GET':
+        # Get today's task or task history
+        today = date.today()
+        if 'date' in request.query_params:
+            try:
+                task_date = request.query_params['date']
+                tasks = DailyTask.objects.filter(user=request.user, date=task_date)
+            except:
+                tasks = DailyTask.objects.filter(user=request.user, date=today)
+        elif 'history' in request.query_params:
+            tasks = DailyTask.objects.filter(user=request.user).order_by('-created_at')
+        else:
+            tasks = DailyTask.objects.filter(user=request.user, date=today)
+        
+        serializer = DailyTaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Always create a new task entry with current timestamp
+        farm_id = request.data.get('farm')
+        
+        # Verify user has access to this farm
+        try:
+            if request.user.is_superuser:
+                farm = Farm.objects.get(id=farm_id, is_active=True)
+            elif request.user.user_type == 'admin':
+                farm = Farm.objects.get(id=farm_id, created_by=request.user, is_active=True)
+            else:
+                farm = request.user.assigned_farms.get(id=farm_id, is_active=True)
+        except Farm.DoesNotExist:
+            return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Create new task entry every time
+        task = DailyTask.objects.create(
+            farm=farm,
+            user=request.user,
+            date=date.today(),
+            farm_hygiene=request.data.get('farm_hygiene', False),
+            disease_pest_check=request.data.get('disease_pest_check', False),
+            daily_crop_update=request.data.get('daily_crop_update', False),
+            trellising=request.data.get('trellising', False),
+            spraying=request.data.get('spraying', False),
+            cleaning=request.data.get('cleaning', False),
+            pruning=request.data.get('pruning', False),
+            main_tank_ec=request.data.get('main_tank_ec') or None,
+            main_tank_ph=request.data.get('main_tank_ph') or None,
+            dripper_ec=request.data.get('dripper_ec') or None,
+            dripper_ph=request.data.get('dripper_ph') or None,
+        )
+        
+        # Create notification in database and send real-time WebSocket notification
+        user_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        # Find the admin who created this farm user first
+        admin_user = request.user.created_by if hasattr(request.user, 'created_by') and request.user.created_by else None
+        
+        # Only create notification if admin exists
+        if admin_user and admin_user.user_type in ['admin', 'superuser']:
+            title = "Daily Task Submitted"
+            message = f"{user_name} submitted daily tasks for {farm.name} at {task.created_at.strftime('%H:%M:%S')}"
+            
+            # Create both regular notification (for user) and persistent admin notification
+            notification = Notification.objects.create(
+                title=title,
+                message=message,
+                notification_type='daily_task',
+                farm=farm,
+                user=admin_user
+            )
+            
+            # Create persistent admin notification
+            admin_notification = create_admin_notification(
+                admin_user=admin_user,
+                title=title,
+                message=message,
+                notification_type='daily_task',
+                source_user=request.user,
+                source_farm=farm,
+                related_object_id=task.id,
+                related_model_name='DailyTask'
+            )
+            
+            # Send real-time WebSocket notification to the specific admin
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    notification_data = {
+                        'type': 'notification_message',
+                        'title': title,
+                        'message': message,
+                        'notification_type': 'daily_task',
+                        'notification_id': admin_notification.id,
+                        'farm_id': farm.id,
+                        'farm_name': farm.name,
+                        'user_id': request.user.id,
+                        'user_name': user_name,
+                        'timestamp': admin_notification.created_at.isoformat()
+                    }
+                    
+                    # Send to specific admin who created this farm user
+                    specific_admin_group = f'admin_{admin_user.id}_notifications'
+                    async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                    
+                    # Also send to general admin notifications group (fallback)
+                    async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
+                    
+                except Exception as e:
+                    pass
+            
+        return Response(DailyTaskSerializer(task).data, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def notifications(request):
+    from django.utils import timezone
+    
+    if request.method == 'GET':
+        # Filter notifications based on user type
+        if request.user.user_type in ['admin', 'superuser']:
+            # Admins see their persistent admin notifications
+            notifications = AdminNotification.objects.filter(admin_user=request.user).order_by('-created_at')
+            serializer = AdminNotificationSerializer(notifications, many=True)
+        else:
+            # Farm users see only their own notifications
+            notifications = Notification.objects.filter(user=request.user).order_by('-created_at')
+            serializer = NotificationSerializer(notifications, many=True)
+        
+        # Optional filtering
+        notification_type = request.query_params.get('type')
+        if notification_type:
+            notifications = notifications.filter(notification_type=notification_type)
+        
+        # Optional pagination
+        limit = request.query_params.get('limit')
+        if limit:
+            try:
+                limit = int(limit)
+                notifications = notifications[:limit]
+            except ValueError:
+                pass
+        
+        # Re-serialize after filtering
+        if request.user.user_type in ['admin', 'superuser']:
+            serializer = AdminNotificationSerializer(notifications, many=True)
+        else:
+            serializer = NotificationSerializer(notifications, many=True)
+        
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        # Mark notifications as read
+        notification_ids = request.data.get('notification_ids', [])
+        if notification_ids:
+            if request.user.user_type in ['admin', 'superuser']:
+                updated_count = AdminNotification.objects.filter(id__in=notification_ids, admin_user=request.user).update(is_read=True)
+            else:
+                updated_count = Notification.objects.filter(id__in=notification_ids, user=request.user).update(is_read=True)
+            return Response({'message': f'{updated_count} notifications marked as read'})
+        else:
+            # Mark all as read
+            if request.user.user_type in ['admin', 'superuser']:
+                AdminNotification.objects.filter(admin_user=request.user).update(is_read=True)
+            else:
+                Notification.objects.filter(user=request.user).update(is_read=True)
+            return Response({'message': 'All notifications marked as read'})
+    
+    elif request.method == 'DELETE':
+        # Delete notifications
+        notification_ids = request.data.get('notification_ids', [])
+        if notification_ids:
+            if request.user.user_type in ['admin', 'superuser']:
+                deleted_count, _ = AdminNotification.objects.filter(id__in=notification_ids, admin_user=request.user).delete()
+            else:
+                deleted_count, _ = Notification.objects.filter(id__in=notification_ids, user=request.user).delete()
+            return Response({'message': f'{deleted_count} notifications deleted'})
+        else:
+            # Delete all notifications for current user
+            if request.user.user_type in ['admin', 'superuser']:
+                deleted_count, _ = AdminNotification.objects.filter(admin_user=request.user).delete()
+            else:
+                deleted_count, _ = Notification.objects.filter(user=request.user).delete()
+            return Response({'message': f'All {deleted_count} notifications deleted'})
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def spray_irrigation_logs(request):
+    
+    if request.method == 'GET':
+        # Get logs for the user
+        today = date.today()
+        if 'date' in request.query_params:
+            try:
+                log_date = request.query_params['date']
+                logs = SprayIrrigationLog.objects.filter(user=request.user, date=log_date)
+            except:
+                logs = SprayIrrigationLog.objects.filter(user=request.user, date=today)
+        elif 'history' in request.query_params:
+            logs = SprayIrrigationLog.objects.filter(user=request.user).order_by('-created_at')
+        else:
+            logs = SprayIrrigationLog.objects.filter(user=request.user, date=today)
+        
+        serializer = SprayIrrigationLogSerializer(logs, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new spray/irrigation log
+        farm_id = request.data.get('farm')
+        
+        # Verify user has access to this farm
+        try:
+            if request.user.is_superuser:
+                farm = Farm.objects.get(id=farm_id, is_active=True)
+            elif request.user.user_type == 'admin':
+                farm = Farm.objects.get(id=farm_id, created_by=request.user, is_active=True)
+            else:
+                farm = request.user.assigned_farms.get(id=farm_id, is_active=True)
+        except Farm.DoesNotExist:
+            return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Create log entry
+        log_data = request.data.copy()
+        if not log_data.get('date'):
+            log_data['date'] = date.today()
+            
+        serializer = CreateSprayIrrigationLogSerializer(data=log_data)
+        if serializer.is_valid():
+            log = serializer.save(user=request.user)
+            return Response(SprayIrrigationLogSerializer(log).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def crop_stages(request):
+    
+    if request.method == 'GET':
+        # Get crop stages for the user
+        if 'history' in request.query_params:
+            stages = CropStage.objects.filter(user=request.user).order_by('-created_at')
+        else:
+            stages = CropStage.objects.filter(user=request.user).order_by('-created_at')
+        
+        serializer = CropStageSerializer(stages, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new crop stage
+        farm_id = request.data.get('farm')
+        
+        # Verify user has access to this farm
+        try:
+            if request.user.is_superuser:
+                farm = Farm.objects.get(id=farm_id, is_active=True)
+            elif request.user.user_type == 'admin':
+                farm = Farm.objects.get(id=farm_id, created_by=request.user, is_active=True)
+            else:
+                farm = request.user.assigned_farms.get(id=farm_id, is_active=True)
+        except Farm.DoesNotExist:
+            return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Create crop stage entry
+        stage_data = request.data.copy()
+        if not stage_data.get('transplant_date'):
+            stage_data['transplant_date'] = date.today()
+            
+        serializer = CreateCropStageSerializer(data=stage_data)
+        if serializer.is_valid():
+            stage = serializer.save(user=request.user)
+            return Response(CropStageSerializer(stage).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def crop_stage_detail(request, stage_id):
+    
+    try:
+        stage = CropStage.objects.get(id=stage_id, user=request.user)
+    except CropStage.DoesNotExist:
+        return Response({'error': 'Crop stage not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = CropStageSerializer(stage)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = CreateCropStageSerializer(stage, data=request.data, partial=True)
+        if serializer.is_valid():
+            stage = serializer.save()
+            return Response(CropStageSerializer(stage).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        stage.delete()
+        return Response({'message': 'Crop stage deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def import_crop_stages(request):
+    """
+    Import crop stages from CSV file
+    """
+    import csv
+    import io
+    from datetime import datetime
+    
+    if 'file' not in request.FILES:
+        return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    file = request.FILES['file']
+    
+    if not file.name.endswith('.csv'):
+        return Response({'error': 'File must be a CSV'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # Validate file size (max 5MB)
+    if file.size > 5 * 1024 * 1024:
+        return Response({'error': 'File size must be less than 5MB'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Read CSV data
+        data = file.read().decode('utf-8')
+        csv_data = csv.DictReader(io.StringIO(data))
+        
+        created_count = 0
+        errors = []
+        
+        for row_num, row in enumerate(csv_data, start=1):
+            try:
+                # Validate required fields
+                required_fields = ['crop_name', 'variety', 'batch_code', 'farm_id']
+                for field in required_fields:
+                    if not row.get(field):
+                        errors.append(f"Row {row_num}: Missing required field '{field}'")
+                        continue
+                
+                # Validate farm access
+                try:
+                    if request.user.is_superuser:
+                        farm = Farm.objects.get(id=row['farm_id'], is_active=True)
+                    elif request.user.user_type == 'admin':
+                        farm = Farm.objects.get(id=row['farm_id'], created_by=request.user, is_active=True)
+                    else:
+                        farm = request.user.assigned_farms.get(id=row['farm_id'], is_active=True)
+                except Farm.DoesNotExist:
+                    errors.append(f"Row {row_num}: Invalid farm ID or no access to farm {row['farm_id']}")
+                    continue
+                
+                # Parse dates
+                transplant_date = None
+                expected_harvest_date = None
+                
+                if row.get('transplant_date'):
+                    try:
+                        transplant_date = datetime.strptime(row['transplant_date'], '%Y-%m-%d').date()
+                    except ValueError:
+                        errors.append(f"Row {row_num}: Invalid transplant_date format. Use YYYY-MM-DD")
+                        continue
+                
+                if row.get('expected_harvest_date'):
+                    try:
+                        expected_harvest_date = datetime.strptime(row['expected_harvest_date'], '%Y-%m-%d').date()
+                    except ValueError:
+                        errors.append(f"Row {row_num}: Invalid expected_harvest_date format. Use YYYY-MM-DD")
+                        continue
+                
+                # Validate current_stage
+                valid_stages = ['germination', 'seedling', 'vegetative', 'flowering', 'fruiting', 'harvest']
+                current_stage = row.get('current_stage', 'seedling').lower()
+                if current_stage not in valid_stages:
+                    errors.append(f"Row {row_num}: Invalid current_stage. Must be one of: {', '.join(valid_stages)}")
+                    continue
+                
+                # Check for duplicate batch_code
+                if CropStage.objects.filter(batch_code=row['batch_code'], user=request.user).exists():
+                    errors.append(f"Row {row_num}: Batch code '{row['batch_code']}' already exists")
+                    continue
+                
+                # Create crop stage
+                crop_stage = CropStage.objects.create(
+                    user=request.user,
+                    farm=farm,
+                    crop_name=row['crop_name'],
+                    variety=row['variety'],
+                    batch_code=row['batch_code'],
+                    current_stage=current_stage,
+                    transplant_date=transplant_date,
+                    expected_harvest_date=expected_harvest_date,
+                    notes=row.get('notes', '')
+                )
+                created_count += 1
+                
+            except Exception as e:
+                errors.append(f"Row {row_num}: Error processing row - {str(e)}")
+                continue
+        
+        return Response({
+            'message': f'Import completed. Created {created_count} crop stages.',
+            'created_count': created_count,
+            'errors': errors,
+            'total_errors': len(errors)
+        })
+        
+    except Exception as e:
+        return Response({'error': f'Error processing file: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_crop_stages(request):
+    """
+    Export crop stages to CSV file
+    """
+    import csv
+    from django.http import HttpResponse
+    
+    # Get user's crop stages
+    crop_stages = CropStage.objects.filter(user=request.user).order_by('-created_at')
+    
+    # Create CSV response
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="crop_stages_export.csv"'
+    
+    writer = csv.writer(response)
+    
+    # Write header
+    writer.writerow([
+        'crop_name',
+        'variety', 
+        'batch_code',
+        'current_stage',
+        'transplant_date',
+        'expected_harvest_date',
+        'growth_duration_days',
+        'farm_name',
+        'farm_id',
+        'notes',
+        'created_at'
+    ])
+    
+    # Write data
+    for stage in crop_stages:
+        writer.writerow([
+            stage.crop_name,
+            stage.variety,
+            stage.batch_code,
+            stage.current_stage,
+            stage.transplant_date.strftime('%Y-%m-%d') if stage.transplant_date else '',
+            stage.expected_harvest_date.strftime('%Y-%m-%d') if stage.expected_harvest_date else '',
+            stage.growth_duration_days,
+            stage.farm.name if stage.farm else '',
+            stage.farm.id if stage.farm else '',
+            stage.notes or '',
+            stage.created_at.strftime('%Y-%m-%d %H:%M:%S')
+        ])
+    
+    return response
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def fertigations(request):
+    """
+    Fertigation management - List user's fertigations or create new one
+    """
+    if request.method == 'GET':
+        # Get filter parameters
+        status_filter = request.query_params.get('status')  # scheduled, completed, cancelled
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        farm_id = request.query_params.get('farm')
+        
+        # Base queryset - user's fertigations only
+        fertigations = Fertigation.objects.filter(user=request.user)
+        
+        # Apply filters
+        if status_filter:
+            fertigations = fertigations.filter(status=status_filter)
+        
+        if date_from:
+            fertigations = fertigations.filter(date_time__gte=date_from)
+        
+        if date_to:
+            fertigations = fertigations.filter(date_time__lte=date_to)
+        
+        if farm_id:
+            fertigations = fertigations.filter(farm_id=farm_id)
+        
+        fertigations = fertigations.order_by('-date_time')
+        
+        serializer = FertigationSerializer(fertigations, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new fertigation
+        serializer = CreateFertigationSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            # Verify user has access to the selected farm
+            farm_id = serializer.validated_data.get('farm')
+            if not farm_id:
+                return Response({'error': 'Farm is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            try:
+                farm = Farm.objects.get(id=farm_id.id)
+                if request.user not in farm.users.all() and farm.created_by != request.user:
+                    return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+            except Farm.DoesNotExist:
+                return Response({'error': 'Farm not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            # Save with user
+            fertigation = serializer.save(user=request.user)
+            
+            # Create notification for completed fertigation
+            if fertigation.status == 'completed':
+                title = f"Fertigation Completed: {fertigation.crop_zone_name}"
+                message = f"Fertigation activity completed for {fertigation.crop_zone_name} at {farm.name}. EC change: {fertigation.ec_change:.2f}, pH change: {fertigation.ph_change:.2f}"
+                
+                Notification.objects.create(
+                    title=title,
+                    message=message,
+                    notification_type='general',
+                    farm=farm,
+                    user=request.user
+                )
+            
+            return Response(FertigationSerializer(fertigation).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def fertigation_detail(request, pk):
+    """
+    Get, update, or delete a specific fertigation
+    """
+    try:
+        fertigation = Fertigation.objects.get(pk=pk, user=request.user)
+    except Fertigation.DoesNotExist:
+        return Response({'error': 'Fertigation not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = FertigationSerializer(fertigation)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = CreateFertigationSerializer(fertigation, data=request.data)
+        if serializer.is_valid():
+            # Verify farm access
+            farm_id = serializer.validated_data.get('farm')
+            if farm_id:
+                try:
+                    farm = Farm.objects.get(id=farm_id.id)
+                    if request.user not in farm.users.all() and farm.created_by != request.user:
+                        return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+                except Farm.DoesNotExist:
+                    return Response({'error': 'Farm not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            fertigation = serializer.save(user=request.user)
+            return Response(FertigationSerializer(fertigation).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        fertigation.delete()
+        return Response({'message': 'Fertigation deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def fertigation_analytics(request):
+    """
+    Get analytics data for fertigation activities
+    """
+    from django.db.models import Avg, Count, Sum
+    from datetime import datetime, timedelta
+    
+    # Get date range (default: last 30 days)
+    days = int(request.query_params.get('days', 30))
+    start_date = datetime.now() - timedelta(days=days)
+    
+    fertigations = Fertigation.objects.filter(
+        user=request.user,
+        date_time__gte=start_date,
+        status='completed'
+    )
+    
+    analytics = {
+        'total_fertigations': fertigations.count(),
+        'avg_ec_change': fertigations.aggregate(Avg('ec_after'))['ec_after__avg'] or 0,
+        'avg_ph_change': fertigations.aggregate(Avg('ph_after'))['ph_after__avg'] or 0,
+        'total_water_used': fertigations.aggregate(Sum('water_volume'))['water_volume__sum'] or 0,
+        'fertigations_by_status': fertigations.values('status').annotate(count=Count('id')),
+        'recent_fertigations': FertigationSerializer(fertigations.order_by('-date_time')[:5], many=True).data,
+        'ec_ph_trends': []
+    }
+    
+    # Get EC/pH trends over time
+    for fertigation in fertigations.order_by('date_time')[:20]:
+        analytics['ec_ph_trends'].append({
+            'date': fertigation.date_time.strftime('%Y-%m-%d'),
+            'ec_before': float(fertigation.ec_before),
+            'ec_after': float(fertigation.ec_after),
+            'ph_before': float(fertigation.ph_before),
+            'ph_after': float(fertigation.ph_after),
+            'crop_zone': fertigation.crop_zone_name
+        })
+    
+    return Response(analytics)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def fertigation_schedule(request):
+    """
+    Manage fertigation schedules - get scheduled fertigations or create new schedule
+    """
+    if request.method == 'GET':
+        # Get upcoming scheduled fertigations
+        from datetime import datetime
+        scheduled_fertigations = Fertigation.objects.filter(
+            user=request.user,
+            status='scheduled',
+            scheduled_date__gte=datetime.now()
+        ).order_by('scheduled_date')
+        
+        serializer = FertigationSerializer(scheduled_fertigations, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create scheduled fertigation
+        data = request.data.copy()
+        data['status'] = 'scheduled'
+        data['is_scheduled'] = True
+        
+        serializer = CreateFertigationSerializer(data=data)
+        
+        if serializer.is_valid():
+            # Verify farm access
+            farm_id = serializer.validated_data.get('farm')
+            try:
+                farm = Farm.objects.get(id=farm_id.id)
+                if request.user not in farm.users.all() and farm.created_by != request.user:
+                    return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+            except Farm.DoesNotExist:
+                return Response({'error': 'Farm not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+            fertigation = serializer.save(user=request.user)
+            
+            # Create notification for scheduled fertigation
+            title = f"Fertigation Scheduled: {fertigation.crop_zone_name}"
+            message = f"Fertigation scheduled for {fertigation.crop_zone_name} at {farm.name} on {fertigation.scheduled_date.strftime('%Y-%m-%d %H:%M')}"
+            
+            Notification.objects.create(
+                title=title,
+                message=message,
+                notification_type='general',
+                farm=farm,
+                user=request.user
+            )
+            
+            return Response(FertigationSerializer(fertigation).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+# Worker Management Views
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def workers(request):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage workers'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get workers managed by this user
+        user_farms = Farm.objects.filter(users=request.user)
+        workers = Worker.objects.filter(farm__in=user_farms, user=request.user)
+        
+        # Filter by employment type if provided
+        employment_type = request.GET.get('employment_type')
+        if employment_type:
+            workers = workers.filter(employment_type=employment_type)
+        
+        # Filter by farm if provided
+        farm_id = request.GET.get('farm')
+        if farm_id:
+            workers = workers.filter(farm_id=farm_id)
+        
+        serializer = WorkerSerializer(workers, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new worker
+        serializer = CreateWorkerSerializer(data=request.data)
+        if serializer.is_valid():
+            # Verify farm access
+            farm = serializer.validated_data['farm']
+            if request.user not in farm.users.all() and farm.created_by != request.user:
+                return Response({'error': 'You do not have permission to add workers to this farm'}, 
+                              status=status.HTTP_403_FORBIDDEN)
+            
+            worker = serializer.save(user=request.user)
+            return Response(WorkerSerializer(worker).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def worker_detail(request, worker_id):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage workers'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        worker = Worker.objects.get(id=worker_id, user=request.user)
+    except Worker.DoesNotExist:
+        return Response({'error': 'Worker not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = WorkerSerializer(worker)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UpdateWorkerSerializer(worker, data=request.data, partial=True)
+        if serializer.is_valid():
+            # Verify farm access if farm is being updated
+            if 'farm' in serializer.validated_data:
+                farm = serializer.validated_data['farm']
+                if request.user not in farm.users.all() and farm.created_by != request.user:
+                    return Response({'error': 'You do not have permission to assign worker to this farm'}, 
+                                  status=status.HTTP_403_FORBIDDEN)
+            
+            worker = serializer.save()
+            return Response(WorkerSerializer(worker).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        worker.delete()
+        return Response({'message': 'Worker deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+# Worker Task Management Views
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def worker_tasks(request):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage worker tasks'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get tasks assigned by this farm user
+        tasks = WorkerTask.objects.filter(user=request.user)
+        
+        # Filter by status if specified
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            tasks = tasks.filter(status=status_filter)
+        
+        # Filter by worker if provided
+        worker_id = request.query_params.get('worker')
+        if worker_id:
+            tasks = tasks.filter(worker_id=worker_id)
+        
+        # Filter by date range if specified
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        if date_from:
+            tasks = tasks.filter(assigned_date__gte=date_from)
+        if date_to:
+            tasks = tasks.filter(assigned_date__lte=date_to)
+        
+        serializer = WorkerTaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new worker task
+        serializer = CreateWorkerTaskSerializer(data=request.data)
+        if serializer.is_valid():
+            # Verify worker access
+            worker = serializer.validated_data['worker']
+            if worker.user != request.user:
+                return Response({'error': 'You can only assign tasks to your workers'}, 
+                              status=status.HTTP_403_FORBIDDEN)
+            
+            task = serializer.save(user=request.user, farm=worker.farm)
+            return Response(WorkerTaskSerializer(task).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def worker_task_detail(request, task_id):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage worker tasks'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        task = WorkerTask.objects.get(id=task_id, user=request.user)
+    except WorkerTask.DoesNotExist:
+        return Response({'error': 'Worker task not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = WorkerTaskSerializer(task)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UpdateWorkerTaskSerializer(task, data=request.data, partial=True)
+        if serializer.is_valid():
+            task = serializer.save()
+            return Response(WorkerTaskSerializer(task).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        task.delete()
+        return Response({'message': 'Worker task deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+
+# Worker Dashboard Summary
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def worker_dashboard_summary(request):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can view worker dashboard'}, status=status.HTTP_403_FORBIDDEN)
+    
+    from datetime import date
+    
+    # Get today's statistics
+    today = date.today()
+    
+    # Tasks managed by this farm user
+    all_tasks = WorkerTask.objects.filter(user=request.user)
+    
+    # Today's tasks
+    today_tasks = all_tasks.filter(assigned_date=today)
+    
+    # Get unique workers
+    user_farms = Farm.objects.filter(users=request.user)
+    workers = Worker.objects.filter(farm__in=user_farms, user=request.user)
+    
+    summary = {
+        'total_workers': workers.count(),
+        'total_tasks': all_tasks.count(),
+        'today_tasks_assigned': today_tasks.count(),
+        'today_tasks_completed': today_tasks.filter(status='completed').count(),
+        'pending_tasks': all_tasks.filter(status='pending').count(),
+        'completed_tasks': all_tasks.filter(status='completed').count(),
+        'tasks_with_issues': all_tasks.filter(status='issue').count(),
+        'recent_completed_tasks': WorkerTaskSerializer(
+            all_tasks.filter(status='completed').order_by('-updated_at')[:5],
+            many=True
+        ).data,
+        'pending_issues': WorkerTaskSerializer(
+            all_tasks.filter(status='issue').order_by('-assigned_date')[:5],
+            many=True
+        ).data,
+    }
+    
+    return Response(summary)
+
+# Issue Report Management
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def issue_reports(request):
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can access issue reports'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get all issue reports created by this farm user
+        issues = IssueReport.objects.filter(farm_user=request.user).order_by('-created_at')
+        
+        # Filter by status if provided
+        status_filter = request.GET.get('status')
+        if status_filter:
+            issues = issues.filter(status=status_filter)
+        
+        # Filter by issue type if provided
+        issue_type_filter = request.GET.get('issue_type')
+        if issue_type_filter:
+            issues = issues.filter(issue_type=issue_type_filter)
+        
+        # Filter by severity if provided
+        severity_filter = request.GET.get('severity')
+        if severity_filter:
+            issues = issues.filter(severity=severity_filter)
+        
+        serializer = IssueReportSerializer(issues, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        serializer = CreateIssueReportSerializer(data=request.data)
+        if serializer.is_valid():
+            # Get the admin user who created this farm user
+            admin_user = None
+            try:
+                admin_user = request.user.created_by
+                if admin_user and admin_user.user_type not in ['admin', 'superuser']:
+                    admin_user = None
+            except Exception as e:
+                admin_user = None
+            
+            # Get the first assigned farm for this user (or None if no farms assigned)
+            user_farm = request.user.assigned_farms.first()
+            
+            issue_report = serializer.save(
+                farm_user=request.user,
+                admin_user=admin_user,
+                farm=user_farm
+            )
+            
+            # Create notifications for both farm user and admin
+            farm_user_notification = Notification.objects.create(
+                user=request.user,
+                title=f"Issue Report Submitted",
+                message=f"Your issue report has been submitted successfully. Issue Type: {issue_report.get_issue_type_display()}, Severity: {issue_report.get_severity_display()}",
+                notification_type='issue_report_submitted',
+                farm=issue_report.farm,
+                related_object_id=issue_report.id
+            )
+            
+            if admin_user:
+                title = f"New Issue Report from {request.user.username}"
+                message = f"Farm: {issue_report.farm.name if issue_report.farm else 'N/A'}, Issue Type: {issue_report.get_issue_type_display()}, Severity: {issue_report.get_severity_display()}, Description: {issue_report.description[:100]}{'...' if len(issue_report.description) > 100 else ''}"
+                
+                # Create regular notification for admin
+                admin_notification = Notification.objects.create(
+                    user=admin_user,
+                    title=title,
+                    message=message,
+                    notification_type='issue_report',
+                    farm=issue_report.farm,
+                    related_object_id=issue_report.id
+                )
+                
+                # Create persistent admin notification
+                persistent_admin_notification = create_admin_notification(
+                    admin_user=admin_user,
+                    title=title,
+                    message=message,
+                    notification_type='issue_report',
+                    source_user=request.user,
+                    source_farm=issue_report.farm,
+                    related_object_id=issue_report.id,
+                    related_model_name='IssueReport'
+                )
+                
+                # Send real-time notification via channels to specific admin
+                try:
+                    from channels.layers import get_channel_layer
+                    channel_layer = get_channel_layer()
+                    
+                    if channel_layer:
+                        notification_data = {
+                            'type': 'notification_message',
+                            'title': persistent_admin_notification.title,
+                            'message': persistent_admin_notification.message,
+                            'notification_type': persistent_admin_notification.notification_type,
+                            'notification_id': persistent_admin_notification.id,
+                            'farm_id': issue_report.farm.id if issue_report.farm else None,
+                            'farm_name': issue_report.farm.name if issue_report.farm else None,
+                            'user_id': request.user.id,
+                            'user_name': request.user.username,
+                            'timestamp': persistent_admin_notification.created_at.isoformat()
+                        }
+                        
+                        # Send to specific admin who created this farm user
+                        specific_admin_group = f'admin_{admin_user.id}_notifications'
+                        async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                        
+                        # Also send to general admin notifications group (fallback)
+                        async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
+                        
+                        
+                except Exception as e:
+                    pass
+            
+            response_serializer = IssueReportSerializer(issue_report)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def issue_report_detail(request, issue_id):
+    try:
+        issue = IssueReport.objects.get(id=issue_id, farm_user=request.user)
+    except IssueReport.DoesNotExist:
+        return Response({'error': 'Issue report not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = IssueReportSerializer(issue)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UpdateIssueReportSerializer(issue, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            response_serializer = IssueReportSerializer(issue)
+            return Response(response_serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        if issue.status != 'reported':
+            return Response({'error': 'Cannot delete issue that is already being reviewed or resolved'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        issue.delete()
+        return Response({'message': 'Issue report deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def spray_schedules(request):
+    if request.method == 'GET':
+        # Get spray schedules for the current user's farms
+        if request.user.is_superuser:
+            spray_schedules = SpraySchedule.objects.all()
+        elif request.user.user_type == 'admin':
+            # Admin can see spray schedules from farms they created
+            admin_farms = Farm.objects.filter(created_by=request.user, is_active=True)
+            spray_schedules = SpraySchedule.objects.filter(farm__in=admin_farms)
+        else:
+            # Farm users can see spray schedules from their assigned farms
+            user_farms = request.user.assigned_farms.filter(is_active=True)
+            spray_schedules = SpraySchedule.objects.filter(farm__in=user_farms)
+        
+        # Filter by farm if provided
+        farm_filter = request.GET.get('farm')
+        if farm_filter:
+            spray_schedules = spray_schedules.filter(farm_id=farm_filter)
+        
+        # Filter by reason if provided
+        reason_filter = request.GET.get('reason')
+        if reason_filter:
+            spray_schedules = spray_schedules.filter(reason=reason_filter)
+        
+        # Filter by completion status
+        status_filter = request.GET.get('status')
+        if status_filter == 'completed':
+            spray_schedules = spray_schedules.filter(is_completed=True)
+        elif status_filter == 'pending':
+            spray_schedules = spray_schedules.filter(is_completed=False)
+        
+        # Filter by upcoming reminders
+        reminder_filter = request.GET.get('reminder_due')
+        if reminder_filter == 'true':
+            from django.utils import timezone
+            spray_schedules = spray_schedules.filter(
+                next_spray_reminder__lte=timezone.now(),
+                next_spray_reminder__isnull=False
+            )
+        
+        # Order by date_time (newest first)
+        spray_schedules = spray_schedules.order_by('-date_time')
+        
+        serializer = SprayScheduleSerializer(spray_schedules, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        serializer = CreateSprayScheduleSerializer(data=request.data)
+        if serializer.is_valid():
+            spray_schedule = serializer.save(user=request.user)
+            
+            # Create notification for spray schedule creation
+            Notification.objects.create(
+                user=request.user,
+                title="Spray Schedule Created",
+                message=f"Spray schedule {spray_schedule.spray_id} for {spray_schedule.crop_zone} has been created. Product: {spray_schedule.product_used}, Date: {spray_schedule.date_time.strftime('%Y-%m-%d %H:%M')}",
+                notification_type='spray_scheduled',
+                farm=spray_schedule.farm,
+                related_object_id=spray_schedule.id
+            )
+            
+            # If there's a next spray reminder, create notification for that too
+            if spray_schedule.next_spray_reminder:
+                Notification.objects.create(
+                    user=request.user,
+                    title="Spray Reminder Set",
+                    message=f"Reminder set for next spray on {spray_schedule.crop_zone}. Reminder date: {spray_schedule.next_spray_reminder.strftime('%Y-%m-%d %H:%M')}",
+                    notification_type='spray_reminder',
+                    farm=spray_schedule.farm,
+                    due_date=spray_schedule.next_spray_reminder,
+                    related_object_id=spray_schedule.id
+                )
+            
+            response_serializer = SprayScheduleSerializer(spray_schedule)
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def spray_schedule_detail(request, schedule_id):
+    try:
+        if request.user.is_superuser:
+            spray_schedule = SpraySchedule.objects.get(id=schedule_id)
+        elif request.user.user_type == 'admin':
+            # Admin can access spray schedules from farms they created
+            admin_farms = Farm.objects.filter(created_by=request.user, is_active=True)
+            spray_schedule = SpraySchedule.objects.get(id=schedule_id, farm__in=admin_farms)
+        else:
+            # Farm users can access spray schedules from their assigned farms
+            user_farms = request.user.assigned_farms.filter(is_active=True)
+            spray_schedule = SpraySchedule.objects.get(id=schedule_id, farm__in=user_farms)
+    except SpraySchedule.DoesNotExist:
+        return Response({'error': 'Spray schedule not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = SprayScheduleSerializer(spray_schedule)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        # Only farm users can update spray schedules (mark as completed, add notes, etc.)
+        if request.user.user_type in ['admin'] and not request.user.is_superuser:
+            return Response({'error': 'Only farm users can update spray schedules'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        serializer = UpdateSprayScheduleSerializer(spray_schedule, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_schedule = serializer.save()
+            
+            # If marked as completed, create completion notification
+            if updated_schedule.is_completed and 'is_completed' in request.data:
+                Notification.objects.create(
+                    user=request.user,
+                    title="Spray Application Completed",
+                    message=f"Spray {updated_schedule.spray_id} for {updated_schedule.crop_zone} has been completed. Product: {updated_schedule.product_used}. PHI: {updated_schedule.phi_log} days.",
+                    notification_type='spray_completed',
+                    farm=updated_schedule.farm,
+                    related_object_id=updated_schedule.id
+                )
+            
+            response_serializer = SprayScheduleSerializer(updated_schedule)
+            return Response(response_serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        # Only allow deletion of uncompleted spray schedules
+        if spray_schedule.is_completed:
+            return Response({'error': 'Cannot delete completed spray schedules'}, 
+                          status=status.HTTP_400_BAD_REQUEST)
+        
+        # Only farm users who created it or admins/superusers can delete
+        if not (request.user == spray_schedule.user or 
+                request.user.user_type == 'admin' or 
+                request.user.is_superuser):
+            return Response({'error': 'Permission denied'}, 
+                          status=status.HTTP_403_FORBIDDEN)
+        
+        spray_schedule.delete()
+        return Response({'message': 'Spray schedule deleted successfully'}, 
+                       status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def spray_schedule_analytics(request):
+    """Get analytics data for spray schedules"""
+    if request.user.is_superuser:
+        spray_schedules = SpraySchedule.objects.all()
+    elif request.user.user_type == 'admin':
+        admin_farms = Farm.objects.filter(created_by=request.user, is_active=True)
+        spray_schedules = SpraySchedule.objects.filter(farm__in=admin_farms)
+    else:
+        user_farms = request.user.assigned_farms.filter(is_active=True)
+        spray_schedules = SpraySchedule.objects.filter(farm__in=user_farms)
+    
+    # Get date range filter
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    date_filter = request.GET.get('period', '30')  # Default to last 30 days
+    if date_filter == '7':
+        start_date = timezone.now() - timedelta(days=7)
+    elif date_filter == '30':
+        start_date = timezone.now() - timedelta(days=30)
+    elif date_filter == '90':
+        start_date = timezone.now() - timedelta(days=90)
+    else:
+        start_date = timezone.now() - timedelta(days=30)
+    
+    period_schedules = spray_schedules.filter(date_time__gte=start_date)
+    
+    analytics_data = {
+        'total_schedules': period_schedules.count(),
+        'completed_schedules': period_schedules.filter(is_completed=True).count(),
+        'pending_schedules': period_schedules.filter(is_completed=False).count(),
+        'overdue_reminders': spray_schedules.filter(
+            next_spray_reminder__lt=timezone.now(),
+            next_spray_reminder__isnull=False,
+            is_completed=False
+        ).count(),
+        'phi_violations': period_schedules.filter(
+            is_completed=True,
+            completion_date__isnull=False
+        ).count(),  # This would need more complex logic for actual PHI violations
+        'reason_breakdown': {
+            'pest': period_schedules.filter(reason='pest').count(),
+            'disease': period_schedules.filter(reason='disease').count(),
+            'nutrient': period_schedules.filter(reason='nutrient').count(),
+        },
+        'monthly_trend': []  # Could add monthly breakdown here
+    }
+    
+    return Response(analytics_data)
+
+# Expenditure Management Views
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def expenditures(request):
+    """
+    Get all expenditures for the user's farms or create a new expenditure
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage expenditures'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get expenditures for all farms the user has access to
+        user_farms = Farm.objects.filter(users=request.user)
+        expenditures = Expenditure.objects.filter(farm__in=user_farms, user=request.user)
+        
+        # Filter by category if provided
+        category = request.GET.get('category')
+        if category:
+            expenditures = expenditures.filter(category=category)
+        
+        # Filter by payment method if provided
+        payment_method = request.GET.get('payment_method')
+        if payment_method:
+            expenditures = expenditures.filter(payment_method=payment_method)
+        
+        # Filter by date range
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            expenditures = expenditures.filter(expense_date__gte=date_from)
+        if date_to:
+            expenditures = expenditures.filter(expense_date__lte=date_to)
+        
+        # Filter by farm if provided
+        farm_id = request.GET.get('farm')
+        if farm_id:
+            expenditures = expenditures.filter(farm_id=farm_id)
+        
+        serializer = ExpenditureSerializer(expenditures, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new expenditure
+        serializer = CreateExpenditureSerializer(data=request.data)
+        if serializer.is_valid():
+            # Verify farm access
+            farm = serializer.validated_data['farm']
+            if request.user not in farm.users.all() and farm.created_by != request.user:
+                return Response({'error': 'You do not have permission to add expenditures to this farm'}, 
+                              status=status.HTTP_403_FORBIDDEN)
+            
+            expenditure = serializer.save(user=request.user)
+            return Response(ExpenditureSerializer(expenditure).data, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def expenditure_detail(request, expenditure_id):
+    """
+    Get, update, or delete a specific expenditure
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage expenditures'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        expenditure = Expenditure.objects.get(id=expenditure_id, user=request.user)
+    except Expenditure.DoesNotExist:
+        return Response({'error': 'Expenditure not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = ExpenditureSerializer(expenditure)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UpdateExpenditureSerializer(expenditure, data=request.data, partial=True)
+        if serializer.is_valid():
+            expenditure = serializer.save()
+            return Response(ExpenditureSerializer(expenditure).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        expenditure.delete()
+        return Response({'message': 'Expenditure deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def expenditure_analytics(request):
+    """
+    Get expenditure analytics and summary
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can view expenditure analytics'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Get user's farms
+    user_farms = Farm.objects.filter(users=request.user)
+    expenditures = Expenditure.objects.filter(farm__in=user_farms, user=request.user)
+    
+    # Filter by date range if provided
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    if date_from:
+        expenditures = expenditures.filter(expense_date__gte=date_from)
+    if date_to:
+        expenditures = expenditures.filter(expense_date__lte=date_to)
+    
+    # Calculate analytics
+    from django.db.models import Sum
+    from decimal import Decimal
+    
+    total_amount = expenditures.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+    
+    # Category wise breakdown
+    category_breakdown = {}
+    for category_code, category_name in Expenditure.CATEGORY_CHOICES:
+        category_total = expenditures.filter(category=category_code).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        if category_total > 0:
+            category_breakdown[category_name] = {
+                'amount': category_total,
+                'percentage': round((category_total / total_amount * 100) if total_amount > 0 else 0, 2)
+            }
+    
+    # Payment method breakdown
+    payment_breakdown = {}
+    for payment_code, payment_name in Expenditure.PAYMENT_METHOD_CHOICES:
+        payment_total = expenditures.filter(payment_method=payment_code).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        if payment_total > 0:
+            payment_breakdown[payment_name] = payment_total
+    
+    analytics_data = {
+        'total_expenditure': total_amount,
+        'total_transactions': expenditures.count(),
+        'average_transaction': round(total_amount / expenditures.count() if expenditures.count() > 0 else 0, 2),
+        'category_breakdown': category_breakdown,
+        'payment_method_breakdown': payment_breakdown,
+        'recent_expenditures': ExpenditureSerializer(expenditures[:5], many=True).data
+    }
+    
+    return Response(analytics_data)
+
+# Sale Management Views
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def sales(request):
+    """
+    Get all sales for the user's farms or create a new sale
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage sales'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get sales for all farms the user has access to
+        user_farms = Farm.objects.filter(users=request.user)
+        sales = Sale.objects.filter(farm__in=user_farms, user=request.user)
+        
+        # Filter by payment status if provided
+        payment_status = request.GET.get('payment_status')
+        if payment_status:
+            sales = sales.filter(payment_status=payment_status)
+        
+        # Filter by crop name if provided
+        crop_name = request.GET.get('crop_name')
+        if crop_name:
+            sales = sales.filter(crop_name__icontains=crop_name)
+        
+        # Filter by buyer name if provided
+        buyer_name = request.GET.get('buyer_name')
+        if buyer_name:
+            sales = sales.filter(buyer_name__icontains=buyer_name)
+        
+        # Filter by date range
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            sales = sales.filter(sale_date__gte=date_from)
+        if date_to:
+            sales = sales.filter(sale_date__lte=date_to)
+        
+        # Filter by farm if provided
+        farm_id = request.GET.get('farm')
+        if farm_id:
+            sales = sales.filter(farm_id=farm_id)
+        
+        serializer = SaleSerializer(sales, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new sale
+        serializer = CreateSaleSerializer(data=request.data)
+        if serializer.is_valid():
+            # Verify farm access
+            farm = serializer.validated_data['farm']
+            if request.user not in farm.users.all() and farm.created_by != request.user:
+                return Response({'error': 'You do not have permission to add sales to this farm'}, 
+                              status=status.HTTP_403_FORBIDDEN)
+            
+            sale = serializer.save(user=request.user)
+            return Response(SaleSerializer(sale).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def sale_detail(request, sale_id):
+    """
+    Get, update, or delete a specific sale
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can manage sales'}, status=status.HTTP_403_FORBIDDEN)
+    
+    try:
+        sale = Sale.objects.get(id=sale_id, user=request.user)
+    except Sale.DoesNotExist:
+        return Response({'error': 'Sale not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = SaleSerializer(sale)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = UpdateSaleSerializer(sale, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(SaleSerializer(sale).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        sale.delete()
+        return Response({'message': 'Sale deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def sale_analytics(request):
+    """
+    Get sale analytics for the user's farms
+    """
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'Only farm users can view sale analytics'}, status=status.HTTP_403_FORBIDDEN)
+    
+    # Get sales for user's farms
+    user_farms = Farm.objects.filter(users=request.user)
+    sales = Sale.objects.filter(farm__in=user_farms, user=request.user)
+    
+    # Apply date range filter if provided
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    if date_from:
+        sales = sales.filter(sale_date__gte=date_from)
+    if date_to:
+        sales = sales.filter(sale_date__lte=date_to)
+    
+    # Calculate analytics
+    total_sales_amount = sum([sale.total_amount for sale in sales])
+    total_amount_received = sum([sale.amount_received for sale in sales])
+    total_pending_amount = sum([sale.remaining_amount for sale in sales])
+    total_net_amount = sum([sale.net_amount for sale in sales])
+    
+    # Payment status breakdown
+    payment_status_breakdown = []
+    for status_choice in Sale.PAYMENT_STATUS_CHOICES:
+        status_sales = sales.filter(payment_status=status_choice[0])
+        status_amount = sum([sale.total_amount for sale in status_sales])
+        payment_status_breakdown.append({
+            'status': status_choice[0],
+            'status_display': status_choice[1],
+            'count': status_sales.count(),
+            'total_amount': status_amount,
+        })
+    
+    # Crop breakdown
+    crop_breakdown = {}
+    for sale in sales:
+        crop = sale.crop_name
+        if crop in crop_breakdown:
+            crop_breakdown[crop]['count'] += 1
+            crop_breakdown[crop]['total_amount'] += sale.total_amount
+            crop_breakdown[crop]['total_quantity'] += sale.quantity_sold
+        else:
+            crop_breakdown[crop] = {
+                'crop_name': crop,
+                'count': 1,
+                'total_amount': sale.total_amount,
+                'total_quantity': sale.quantity_sold,
+                'unit': sale.get_unit_display()
+            }
+    
+    crop_breakdown_list = list(crop_breakdown.values())
+    
+    # Top buyers
+    buyer_breakdown = {}
+    for sale in sales:
+        buyer = sale.buyer_name
+        if buyer in buyer_breakdown:
+            buyer_breakdown[buyer]['count'] += 1
+            buyer_breakdown[buyer]['total_amount'] += sale.total_amount
+        else:
+            buyer_breakdown[buyer] = {
+                'buyer_name': buyer,
+                'count': 1,
+                'total_amount': sale.total_amount,
+            }
+    
+    top_buyers = sorted(buyer_breakdown.values(), key=lambda x: x['total_amount'], reverse=True)[:5]
+    
+    analytics_data = {
+        'total_sales_amount': total_sales_amount,
+        'total_amount_received': total_amount_received,
+        'total_pending_amount': total_pending_amount,
+        'total_net_amount': total_net_amount,
+        'total_transactions': sales.count(),
+        'average_sale_amount': round(total_sales_amount / sales.count() if sales.count() > 0 else 0, 2),
+        'payment_completion_rate': round((total_amount_received / total_sales_amount * 100) if total_sales_amount > 0 else 0, 2),
+        'payment_status_breakdown': payment_status_breakdown,
+        'crop_breakdown': crop_breakdown_list,
+        'top_buyers': top_buyers,
+        'recent_sales': SaleSerializer(sales[:5], many=True).data
+    }
+    
+    return Response(analytics_data)
+
