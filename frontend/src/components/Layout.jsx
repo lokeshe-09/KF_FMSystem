@@ -152,78 +152,81 @@ const Layout = ({ children }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 flex">
-      {/* Desktop sidebar */}
-      <div className="hidden lg:flex lg:w-72 lg:flex-col lg:fixed lg:inset-y-0 z-50">
-        <div className="flex-1 flex flex-col min-h-0 bg-white shadow-xl border-r border-slate-200/60">
-          {/* Logo Section */}
-          <div className="flex items-center flex-shrink-0 px-6 py-6 border-b border-slate-200/60">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30">
+      {/* Desktop layout */}
+      <div className="hidden lg:flex">
+        {/* Desktop sidebar */}
+        <div className="w-72 xl:w-80 flex flex-col fixed inset-y-0 z-50 bg-white shadow-xl border-r border-slate-200/60">
+          {/* Logo Section - Fixed at top */}
+          <div className="flex items-center flex-shrink-0 px-4 lg:px-6 py-4 lg:py-6 border-b border-slate-200/60">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-10 h-10 lg:w-12 lg:h-12 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <svg className="w-6 h-6 lg:w-7 lg:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                 </svg>
               </div>
               <div>
-                <h1 className="text-xl font-bold text-slate-800">Farm Management</h1>
-                <p className="text-xs text-slate-500 font-medium">Professional Dashboard</p>
+                <h1 className="text-lg lg:text-xl xl:text-2xl font-bold text-slate-800 leading-tight">Farm Management</h1>
+                <p className="text-xs lg:text-sm text-slate-500 font-medium">Professional Dashboard</p>
               </div>
             </div>
           </div>
-          
-          {/* Farm Context Header (when in farm mode) */}
+
+          {/* Farm Context Header (when in farm mode) - Fixed */}
           {inFarmMode && isFarmUser && (
-            <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 mx-4 rounded-lg mb-4 mt-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Current Farm</p>
-                  <p className="text-sm font-medium text-blue-900">Farm Context Mode</p>
+            <div className="flex-shrink-0 px-4 py-3 border-b border-slate-200/60">
+              <div className="px-3 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Current Farm</p>
+                    <p className="text-sm font-medium text-blue-900">Farm Context Mode</p>
+                  </div>
+                  <a
+                    href="/my-farms"
+                    className="inline-flex items-center px-2 py-1 border border-blue-200 text-xs font-medium rounded text-blue-700 bg-white hover:bg-blue-50 transition-colors duration-200"
+                  >
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back
+                  </a>
                 </div>
-                <a
-                  href="/my-farms"
-                  className="inline-flex items-center px-3 py-1.5 border border-blue-200 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors duration-200"
-                >
-                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
-                  Back to My Farms
-                </a>
               </div>
             </div>
           )}
 
-          {/* Navigation */}
-          <div className="flex-1 flex flex-col pt-2 pb-4 overflow-y-auto">
-            <nav className="flex-1 px-4 space-y-2">
+          {/* Scrollable Navigation Area */}
+          <div className="flex-1 overflow-y-auto overflow-x-hidden py-2">
+            <nav className="px-4 space-y-2">
               {navigation.map((item) => {
                 const IconComponent = item.icon;
                 const isActive = location.pathname === item.href;
-                
+
                 return (
                   <a
                     key={item.name}
                     href={item.href}
-                    className={`group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ease-in-out ${
+                    className={`group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ease-in-out hover:scale-[1.02] active:scale-[0.98] ${
                       isActive
                         ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
-                    <IconComponent className={`mr-4 h-5 w-5 transition-colors duration-200 ${
+                    <IconComponent className={`mr-4 h-5 w-5 transition-colors duration-200 flex-shrink-0 ${
                       isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-500'
                     }`} />
                     <span className="truncate">{item.name}</span>
                     {isActive && (
-                      <div className="ml-auto w-2 h-2 bg-white rounded-full opacity-75"></div>
+                      <div className="ml-auto w-2 h-2 bg-white rounded-full opacity-75 flex-shrink-0"></div>
                     )}
                   </a>
                 );
               })}
             </nav>
           </div>
-          
-          {/* User Profile Section */}
-          <div className="flex-shrink-0 border-t border-slate-200/60">
+
+          {/* User Profile Section - Fixed at bottom */}
+          <div className="flex-shrink-0 border-t border-slate-200/60 bg-white">
             <div className="flex items-center p-4">
               <div className="flex-shrink-0">
                 <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center">
@@ -232,7 +235,7 @@ const Layout = ({ children }) => {
                   </span>
                 </div>
               </div>
-              <div className="ml-3 flex-1">
+              <div className="ml-3 flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-700 truncate">{user.username}</p>
                 <p className="text-xs text-slate-500 capitalize flex items-center">
                   <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
@@ -243,7 +246,7 @@ const Layout = ({ children }) => {
               </div>
               <button
                 onClick={logout}
-                className="ml-2 inline-flex items-center justify-center w-8 h-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors duration-200"
+                className="ml-2 inline-flex items-center justify-center w-8 h-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all duration-200 hover:scale-110 active:scale-95"
                 title="Logout"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -253,36 +256,74 @@ const Layout = ({ children }) => {
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Mobile header */}
-      <div className="lg:hidden">
-        <div className="sticky top-0 z-40 flex items-center h-16 px-4 bg-white/95 backdrop-blur-sm border-b border-slate-200/60 shadow-sm">
-          <button
-            type="button"
-            className="inline-flex items-center justify-center w-10 h-10 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors duration-200"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <div className="ml-4 flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
+        {/* Desktop main content */}
+        <div className="pl-72 xl:pl-80 flex-1 flex flex-col min-h-screen max-h-screen overflow-hidden">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="min-h-full py-6 lg:py-8">
+              <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                {children}
+              </div>
             </div>
-            <h1 className="text-lg font-bold text-slate-800">Farm Management</h1>
-          </div>
+          </main>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="lg:pl-72 flex flex-col flex-1">
-        <main className="flex-1 min-h-0">
-          <div className="h-full py-6 lg:py-8">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-full">
+      {/* Mobile layout */}
+      <div className="lg:hidden flex flex-col min-h-screen">
+        {/* Mobile header */}
+        <div className="sticky top-0 z-40 flex items-center justify-between h-14 sm:h-16 px-3 sm:px-4 bg-white/95 backdrop-blur-sm border-b border-slate-200/60 shadow-sm">
+          <div className="flex items-center space-x-3 flex-1 min-w-0">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-all duration-200 active:scale-95"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+
+            <div className="flex items-center space-x-2 sm:space-x-3 flex-1 min-w-0">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h1 className="text-base sm:text-lg font-bold text-slate-800 truncate">Farm Management</h1>
+                {inFarmMode && (
+                  <p className="text-xs text-slate-500 font-medium truncate">Farm Dashboard</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Mobile User Info */}
+          <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0">
+            {inFarmMode && isFarmUser && (
+              <a
+                href="/my-farms"
+                className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors duration-200"
+                title="Back to My Farms"
+              >
+                <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </a>
+            )}
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center">
+              <span className="text-xs sm:text-sm font-semibold text-white">
+                {user.username?.charAt(0)?.toUpperCase() || 'U'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile main content */}
+        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="min-h-full py-3 sm:py-4 md:py-6">
+            <div className="px-3 sm:px-4 md:px-6">
               {children}
             </div>
           </div>
@@ -292,35 +333,35 @@ const Layout = ({ children }) => {
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 flex z-50 lg:hidden">
-          <div 
-            className="fixed inset-0 bg-slate-600/75 backdrop-blur-sm" 
-            onClick={() => setSidebarOpen(false)} 
+          <div
+            className="fixed inset-0 bg-slate-600/75 backdrop-blur-sm"
+            onClick={() => setSidebarOpen(false)}
           />
-          
-          <div className="relative flex-1 flex flex-col max-w-xs w-full bg-white shadow-xl">
-            <div className="absolute top-0 right-0 -mr-12 pt-2">
+
+          <div className="relative flex-1 flex flex-col max-w-xs sm:max-w-sm w-full bg-white shadow-xl">
+            <div className="absolute top-0 right-0 -mr-10 sm:-mr-12 pt-2">
               <button
                 type="button"
-                className="ml-1 flex items-center justify-center h-10 w-10 rounded-full text-white hover:bg-white/20 transition-colors duration-200"
+                className="ml-1 flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-full text-white hover:bg-white/20 active:bg-white/30 transition-all duration-200 active:scale-95"
                 onClick={() => setSidebarOpen(false)}
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            
+
             {/* Mobile Logo Section */}
-            <div className="flex items-center flex-shrink-0 px-6 py-6 border-b border-slate-200/60">
+            <div className="flex items-center flex-shrink-0 px-4 sm:px-6 py-4 sm:py-6 border-b border-slate-200/60">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
                 </div>
                 <div>
-                  <h1 className="text-xl font-bold text-slate-800">Farm Management</h1>
-                  <p className="text-xs text-slate-500 font-medium">Professional Dashboard</p>
+                  <h1 className="text-lg sm:text-xl font-bold text-slate-800">Farm Management</h1>
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium">Professional Dashboard</p>
                 </div>
               </div>
             </div>
@@ -349,28 +390,28 @@ const Layout = ({ children }) => {
 
             {/* Mobile Navigation */}
             <div className="flex-1 h-0 pt-2 pb-4 overflow-y-auto">
-              <nav className="px-4 space-y-2">
+              <nav className="px-3 sm:px-4 space-y-1 sm:space-y-2">
                 {navigation.map((item) => {
                   const IconComponent = item.icon;
                   const isActive = location.pathname === item.href;
-                  
+
                   return (
                     <a
                       key={item.name}
                       href={item.href}
-                      className={`group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ease-in-out ${
+                      className={`group flex items-center px-3 sm:px-4 py-3 sm:py-4 text-sm sm:text-base font-medium rounded-xl transition-all duration-200 ease-in-out min-h-[44px] ${
                         isActive
                           ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/25'
-                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 active:bg-slate-200'
                       }`}
                       onClick={() => setSidebarOpen(false)}
                     >
-                      <IconComponent className={`mr-4 h-5 w-5 transition-colors duration-200 ${
+                      <IconComponent className={`mr-3 sm:mr-4 h-5 w-5 sm:h-6 sm:w-6 transition-colors duration-200 flex-shrink-0 ${
                         isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-500'
                       }`} />
-                      <span className="truncate">{item.name}</span>
+                      <span className="truncate flex-1">{item.name}</span>
                       {isActive && (
-                        <div className="ml-auto w-2 h-2 bg-white rounded-full opacity-75"></div>
+                        <div className="ml-auto w-2 h-2 bg-white rounded-full opacity-75 flex-shrink-0"></div>
                       )}
                     </a>
                   );
@@ -380,17 +421,17 @@ const Layout = ({ children }) => {
             
             {/* Mobile User Profile Section */}
             <div className="flex-shrink-0 border-t border-slate-200/60">
-              <div className="flex items-center p-4">
+              <div className="flex items-center p-3 sm:p-4">
                 <div className="flex-shrink-0">
-                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-semibold text-white">
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center">
+                    <span className="text-sm sm:text-base font-semibold text-white">
                       {user.username?.charAt(0)?.toUpperCase() || 'U'}
                     </span>
                   </div>
                 </div>
-                <div className="ml-3 flex-1">
-                  <p className="text-sm font-medium text-slate-700 truncate">{user.username}</p>
-                  <p className="text-xs text-slate-500 capitalize flex items-center">
+                <div className="ml-3 sm:ml-4 flex-1 min-w-0">
+                  <p className="text-sm sm:text-base font-medium text-slate-700 truncate">{user.username}</p>
+                  <p className="text-xs sm:text-sm text-slate-500 capitalize flex items-center">
                     <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
                       isSuperuser ? 'bg-purple-400' : user.user_type === 'admin' ? 'bg-emerald-400' : 'bg-blue-400'
                     }`}></span>
@@ -399,10 +440,10 @@ const Layout = ({ children }) => {
                 </div>
                 <button
                   onClick={logout}
-                  className="ml-2 inline-flex items-center justify-center w-8 h-8 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors duration-200"
+                  className="ml-2 inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all duration-200 active:scale-95 min-h-[44px] min-w-[44px]"
                   title="Logout"
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
                 </button>
