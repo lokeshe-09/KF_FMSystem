@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 
 // SVG Icons as components
 const DashboardIcon = ({ className }) => (
@@ -88,13 +88,39 @@ const SaleStageIcon = ({ className }) => (
 );
 
 const Layout = ({ children }) => {
-  const { user, logout, isAdmin, isSuperuser } = useAuth();
+  const { user, logout, isAdmin, isSuperuser, isFarmUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const { farmId } = useParams();
+  
+  // Check if we're in farm-specific mode
+  const inFarmMode = farmId && location.pathname.includes(`/farm/${farmId}`);
 
-  const navigation = [
-    { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon, show: true },
+  // Farm-specific navigation (when in /farm/:farmId/* routes)
+  const farmNavigation = [
+    { name: 'Farm Dashboard', href: `/farm/${farmId}/dashboard`, icon: DashboardIcon, show: true },
+    { name: 'Daily Tasks', href: `/farm/${farmId}/daily-tasks`, icon: TasksIcon, show: true },
+    { name: 'Crop Stages', href: `/farm/${farmId}/crop-stages`, icon: CropStageIcon, show: true },
+    { name: 'Spray Schedule', href: `/farm/${farmId}/spray-schedules`, icon: SprayIcon, show: true },
+    { name: 'Fertigation', href: `/farm/${farmId}/fertigations`, icon: FertigationIcon, show: true },
+    { name: 'Worker Tasks', href: `/farm/${farmId}/worker-tasks`, icon: WorkerTaskIcon, show: true },
+    { name: 'Issue Reports', href: `/farm/${farmId}/issue-reports`, icon: IssueReportIcon, show: true },
+    { name: 'Expenditures', href: `/farm/${farmId}/expenditures`, icon: ExpenditureIcon, show: true },
+    { name: 'Sales', href: `/farm/${farmId}/sales`, icon: SaleStageIcon, show: true },
+    { name: 'Notifications', href: `/farm/${farmId}/notifications`, icon: NotificationIcon, show: true },
+  ];
+
+  // General farm user navigation (when not in farm-specific mode)
+  const farmUserNavigation = [
+    { name: 'Farm Dashboard', href: '/farm-user-dashboard', icon: DashboardIcon, show: true },
+    { name: 'My Farms', href: '/my-farms', icon: FarmIcon, show: true },
+    { name: 'My Notifications', href: '/farm-notifications', icon: NotificationIcon, show: true },
     { name: 'Profile', href: '/profile', icon: ProfileIcon, show: true },
+  ];
+
+  // Admin/Superuser navigation (legacy)
+  const adminNavigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon, show: true },
     { name: 'Daily Tasks', href: '/daily-tasks', icon: TasksIcon, show: !isAdmin && !isSuperuser },
     { name: 'Crop Stage', href: '/crop-stage', icon: CropStageIcon, show: !isAdmin && !isSuperuser },
     { name: 'Calendar', href: '/calendar', icon: CalendarIcon, show: !isAdmin && !isSuperuser },
@@ -106,6 +132,7 @@ const Layout = ({ children }) => {
     { name: 'Sale Stage', href: '/sale-stage', icon: SaleStageIcon, show: !isAdmin && !isSuperuser },
     { name: 'Notifications', href: '/farm-notifications', icon: NotificationIcon, show: !isAdmin && !isSuperuser },
     { name: 'Admin Notifications', href: '/notifications', icon: NotificationIcon, show: isAdmin && !isSuperuser },
+    { name: 'Send Notifications', href: '/admin/notification-manager', icon: NotificationIcon, show: isAdmin && !isSuperuser },
     { name: 'User Management', href: '/user-management', icon: UserIcon, show: isSuperuser },
     { name: 'Farm User Management', href: '/farm-user-management', icon: UserIcon, show: isAdmin && !isSuperuser },
     { name: 'Create Farm', href: '/create-farm', icon: FarmIcon, show: isAdmin && !isSuperuser },
@@ -113,6 +140,16 @@ const Layout = ({ children }) => {
     { name: 'All Farms', href: '/farms', icon: FarmIcon, show: isAdmin || isSuperuser },
     { name: 'My Farms', href: '/farms', icon: FarmIcon, show: !isAdmin && !isSuperuser },
   ].filter(item => item.show);
+
+  // Determine which navigation to use
+  let navigation;
+  if (isFarmUser) {
+    // Farm users get farm-specific navigation when in farm mode, otherwise general farm user navigation
+    navigation = inFarmMode ? farmNavigation : farmUserNavigation;
+  } else {
+    // Admins and superusers always get admin navigation
+    navigation = adminNavigation;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 flex">
@@ -134,8 +171,29 @@ const Layout = ({ children }) => {
             </div>
           </div>
           
+          {/* Farm Context Header (when in farm mode) */}
+          {inFarmMode && isFarmUser && (
+            <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 mx-4 rounded-lg mb-4 mt-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Current Farm</p>
+                  <p className="text-sm font-medium text-blue-900">Farm Context Mode</p>
+                </div>
+                <a
+                  href="/my-farms"
+                  className="inline-flex items-center px-3 py-1.5 border border-blue-200 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors duration-200"
+                >
+                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                  Back to My Farms
+                </a>
+              </div>
+            </div>
+          )}
+
           {/* Navigation */}
-          <div className="flex-1 flex flex-col pt-6 pb-4 overflow-y-auto">
+          <div className="flex-1 flex flex-col pt-2 pb-4 overflow-y-auto">
             <nav className="flex-1 px-4 space-y-2">
               {navigation.map((item) => {
                 const IconComponent = item.icon;
@@ -267,8 +325,30 @@ const Layout = ({ children }) => {
               </div>
             </div>
             
+            {/* Mobile Farm Context Header (when in farm mode) */}
+            {inFarmMode && isFarmUser && (
+              <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 mx-4 rounded-lg mb-4 mt-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Current Farm</p>
+                    <p className="text-sm font-medium text-blue-900">Farm Context Mode</p>
+                  </div>
+                  <a
+                    href="/my-farms"
+                    className="inline-flex items-center px-3 py-1.5 border border-blue-200 text-xs font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 transition-colors duration-200"
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to My Farms
+                  </a>
+                </div>
+              </div>
+            )}
+
             {/* Mobile Navigation */}
-            <div className="flex-1 h-0 pt-6 pb-4 overflow-y-auto">
+            <div className="flex-1 h-0 pt-2 pb-4 overflow-y-auto">
               <nav className="px-4 space-y-2">
                 {navigation.map((item) => {
                   const IconComponent = item.icon;

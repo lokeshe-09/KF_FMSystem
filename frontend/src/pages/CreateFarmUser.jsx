@@ -14,7 +14,7 @@ const CreateFarmUser = () => {
     first_name: '',
     last_name: '',
     phone_number: '',
-    assigned_farm: ''
+    assigned_farms: []
   });
   const [loading, setLoading] = useState(false);
   const [farms, setFarms] = useState([]);
@@ -36,10 +36,21 @@ const CreateFarmUser = () => {
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: value
     });
+  };
+
+  const handleFarmSelection = (farmId) => {
+    const farmIdNum = parseInt(farmId);
+    setFormData(prev => ({
+      ...prev,
+      assigned_farms: prev.assigned_farms.includes(farmIdNum)
+        ? prev.assigned_farms.filter(id => id !== farmIdNum)
+        : [...prev.assigned_farms, farmIdNum]
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -55,8 +66,10 @@ const CreateFarmUser = () => {
     try {
       const userData = {
         ...formData,
-        assigned_farms: formData.assigned_farm ? [parseInt(formData.assigned_farm)] : []
+        assigned_farms: formData.assigned_farms.length > 0 ? formData.assigned_farms : []
       };
+      
+      console.log('DEBUG: Creating farm user with data:', userData);
       await authAPI.createFarmUser(userData);
       toast.success('Farm user created successfully!');
       navigate('/dashboard');
@@ -193,25 +206,36 @@ const CreateFarmUser = () => {
             </div>
 
             <div>
-              <label htmlFor="assigned_farm" className="block text-sm font-medium text-gray-700">
-                Assign to Farm
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Assign to Farms
               </label>
-              <select
-                name="assigned_farm"
-                id="assigned_farm"
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                value={formData.assigned_farm}
-                onChange={handleChange}
-              >
-                <option value="">Select a farm (optional)</option>
-                {farms.map((farm) => (
-                  <option key={farm.id} value={farm.id}>
-                    {farm.name} - {farm.location}
-                  </option>
-                ))}
-              </select>
-              {loadingFarms && (
-                <p className="mt-1 text-sm text-gray-500">Loading farms...</p>
+              {loadingFarms ? (
+                <p className="text-sm text-gray-500">Loading farms...</p>
+              ) : farms.length === 0 ? (
+                <p className="text-sm text-gray-500">No farms available. Create a farm first.</p>
+              ) : (
+                <div className="space-y-2 max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3">
+                  {farms.map((farm) => (
+                    <div key={farm.id} className="flex items-center">
+                      <input
+                        type="checkbox"
+                        id={`farm-${farm.id}`}
+                        checked={formData.assigned_farms.includes(farm.id)}
+                        onChange={() => handleFarmSelection(farm.id)}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor={`farm-${farm.id}`} className="ml-3 block text-sm text-gray-700">
+                        <span className="font-medium">{farm.name}</span>
+                        <span className="text-gray-500 ml-1">- {farm.location}</span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {formData.assigned_farms.length > 0 && (
+                <p className="mt-2 text-sm text-green-600">
+                  {formData.assigned_farms.length} farm(s) selected
+                </p>
               )}
             </div>
 

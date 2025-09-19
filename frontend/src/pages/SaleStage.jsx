@@ -1,9 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
 const SaleStage = () => {
+  const { farmId } = useParams();
+  
+  // Check if we're in farm-specific mode for complete database isolation
+  const inFarmMode = Boolean(farmId);
   const [loading, setLoading] = useState(false);
   const [salesLoading, setSalesLoading] = useState(false);
   
@@ -70,10 +75,18 @@ const SaleStage = () => {
   ];
 
   useEffect(() => {
-    fetchSales();
-    fetchFarms();
+    if (inFarmMode) {
+      // In farm-specific mode, set farmId automatically and don't fetch farms list
+      setSaleForm(prev => ({ ...prev, farm: farmId }));
+      setFilters(prev => ({ ...prev, farm: farmId }));
+      fetchSales();
+    } else {
+      // In admin mode, fetch farms list and sales
+      fetchFarms();
+      fetchSales();
+    }
     fetchAnalytics();
-  }, []);
+  }, [farmId, inFarmMode]);
 
   // Set default farm when farms are loaded
   useEffect(() => {
@@ -99,7 +112,17 @@ const SaleStage = () => {
       const cleanFilters = Object.fromEntries(
         Object.entries(combinedFilters).filter(([_, value]) => value !== '')
       );
-      const response = await farmAPI.getSales(cleanFilters);
+      
+      let response;
+      if (inFarmMode) {
+        // Use farm-specific API for complete database isolation
+        console.log(`DEBUG: Fetching sales for farm ${farmId} only`);
+        response = await farmAPI.getFarmSales(farmId, cleanFilters);
+      } else {
+        // Use general API for admin mode
+        response = await farmAPI.getSales(cleanFilters);
+      }
+      
       setSales(response.data || []);
       setFilters(combinedFilters);
     } catch (error) {
@@ -189,7 +212,15 @@ const SaleStage = () => {
         payment_due_date: saleForm.payment_due_date || null,
       };
       
-      const response = await farmAPI.createSale(cleanedData);
+      let response;
+      if (inFarmMode) {
+        // Use farm-specific API for complete database isolation
+        console.log(`DEBUG: Creating sale for farm ${farmId} only`);
+        response = await farmAPI.createFarmSale(farmId, cleanedData);
+      } else {
+        // Use general API for admin mode
+        response = await farmAPI.createSale(cleanedData);
+      }
       toast.success('Sale added successfully');
       setShowAddModal(false);
       resetForm();
@@ -427,16 +458,19 @@ const SaleStage = () => {
               className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
             />
 
-            <select
-              value={filters.farm}
-              onChange={(e) => fetchSales({ ...filters, farm: e.target.value })}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">All Farms</option>
-              {farms.map(farm => (
-                <option key={farm.id} value={farm.id}>{farm.name}</option>
-              ))}
-            </select>
+            {/* Hide farm filter in farm-specific mode - complete database isolation */}
+            {!inFarmMode && (
+              <select
+                value={filters.farm}
+                onChange={(e) => fetchSales({ ...filters, farm: e.target.value })}
+                className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              >
+                <option value="">All Farms</option>
+                {farms.map(farm => (
+                  <option key={farm.id} value={farm.id}>{farm.name}</option>
+                ))}
+              </select>
+            )}
           </div>
           
           <div className="flex gap-4 mt-4">
@@ -766,26 +800,39 @@ const SaleStage = () => {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
-                      <div className="relative">
-                        <select
-                          value={saleForm.farm}
-                          onChange={(e) => setSaleForm({ ...saleForm, farm: e.target.value })}
-                          className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-emerald-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
-                        >
-                          <option value="">Select Farm</option>
-                          {farms.map(farm => (
-                            <option key={farm.id} value={farm.id}>{farm.name}</option>
-                          ))}
-                        </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                    {/* Hide farm selection in farm-specific mode - complete database isolation */}
+                    {!inFarmMode && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
+                        <div className="relative">
+                          <select
+                            value={saleForm.farm}
+                            onChange={(e) => setSaleForm({ ...saleForm, farm: e.target.value })}
+                            className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-emerald-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
+                          >
+                            <option value="">Select Farm</option>
+                            {farms.map(farm => (
+                              <option key={farm.id} value={farm.id}>{farm.name}</option>
+                            ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
+                    
+                    {/* Show farm info in farm-specific mode */}
+                    {inFarmMode && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm</label>
+                        <div className="w-full px-4 py-3 bg-blue-50 border border-blue-200 rounded-full text-sm text-blue-800 font-medium">
+                          🏡 Farm Context Mode - Auto-assigned
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Additional Information Section */}

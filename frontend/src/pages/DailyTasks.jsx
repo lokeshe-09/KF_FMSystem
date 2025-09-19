@@ -1,10 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
 const DailyTasks = () => {
+  const { farmId } = useParams();
   const [farms, setFarms] = useState([]);
+  
+  // Check if we're in farm-specific mode
+  const inFarmMode = Boolean(farmId);
+  
   const [taskForm, setTaskForm] = useState({
     farm: '',
     farm_hygiene: false,
@@ -25,9 +31,17 @@ const DailyTasks = () => {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetchFarms();
-    fetchTaskHistory();
-  }, []);
+    if (inFarmMode) {
+      // In farm-specific mode, set the farm automatically and fetch task history
+      setTaskForm(prev => ({ ...prev, farm: farmId }));
+      fetchTaskHistory();
+      setLoading(false);
+    } else {
+      // In admin mode, fetch farms and task history
+      fetchFarms();
+      fetchTaskHistory();
+    }
+  }, [farmId, inFarmMode]);
 
   const fetchFarms = async () => {
     try {
@@ -46,7 +60,14 @@ const DailyTasks = () => {
 
   const fetchTaskHistory = async () => {
     try {
-      const response = await farmAPI.getDailyTasks({ history: true });
+      let response;
+      if (inFarmMode) {
+        // Use farm-specific API endpoint
+        response = await farmAPI.getFarmDailyTasks(farmId, { history: true });
+      } else {
+        // Use general API endpoint
+        response = await farmAPI.getDailyTasks({ history: true });
+      }
       setTaskHistory(response.data);
     } catch (error) {
       console.error('Error fetching task history:', error);
@@ -58,7 +79,13 @@ const DailyTasks = () => {
     setSubmitting(true);
     
     try {
-      await farmAPI.submitDailyTask(taskForm);
+      if (inFarmMode) {
+        // Use farm-specific API endpoint
+        await farmAPI.submitFarmDailyTask(farmId, taskForm);
+      } else {
+        // Use general API endpoint
+        await farmAPI.submitDailyTask(taskForm);
+      }
       toast.success('Daily tasks completed successfully! 🌱', {
         duration: 3000,
         style: {
@@ -69,7 +96,7 @@ const DailyTasks = () => {
       
       // Reset form to initial state
       setTaskForm({
-        farm: taskForm.farm, // Keep the selected farm
+        farm: inFarmMode ? farmId : taskForm.farm, // Keep the current farm (farmId in farm mode, selected farm in admin mode)
         farm_hygiene: false,
         disease_pest_check: false,
         daily_crop_update: false,
@@ -141,63 +168,70 @@ const DailyTasks = () => {
 
         {/* Daily Tasks Form */}
         <div className="card overflow-hidden">
-          <div className="px-8 py-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100">
+          <div className="px-4 sm:px-8 py-4 sm:py-6 bg-gradient-to-r from-emerald-50 to-teal-50 border-b border-emerald-100">
             <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-emerald-500 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
               <div>
-                <h3 className="text-xl font-bold text-slate-900">Today's Tasks</h3>
-                <p className="text-slate-600 text-sm">Track your daily farm activities and measurements</p>
+                <h3 className="text-lg sm:text-xl font-bold text-slate-900">Today's Tasks</h3>
+                <p className="text-slate-600 text-xs sm:text-sm">Track your daily farm activities and measurements</p>
               </div>
             </div>
           </div>
           
-          <form onSubmit={handleTaskSubmit} className="p-8 space-y-8">
-            {/* Farm Selection */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-700">Select Farm</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                </div>
-                <select
-                  name="farm"
-                  value={taskForm.farm}
-                  onChange={handleTaskChange}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 transition-all duration-300 text-sm sm:text-base appearance-none"
-                >
-                  <option value="">Choose your farm</option>
-                  {farms.map((farm) => (
-                    <option key={farm.id} value={farm.id}>
-                      {farm.name} - {farm.location}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+          <form onSubmit={handleTaskSubmit} className="p-4 sm:p-8 space-y-6 sm:space-y-8">
+            {/* Farm Selection - Only show in admin mode */}
+            {!inFarmMode && (
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-slate-700">Select Farm</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                  </div>
+                  <select
+                    name="farm"
+                    value={taskForm.farm}
+                    onChange={handleTaskChange}
+                    required
+                    className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 transition-all duration-300 text-sm sm:text-base appearance-none"
+                  >
+                    <option value="">Choose your farm</option>
+                    {farms.map((farm) => (
+                      <option key={farm.id} value={farm.id}>
+                        {farm.name} - {farm.location}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Hidden farm input for form submission in farm mode */}
+            {inFarmMode && (
+              <input type="hidden" name="farm" value={farmId} />
+            )}
 
             {/* Task Sections */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="grid grid-cols-1 sm:grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
               {/* Farm Hygiene Tasks */}
               <div className="space-y-4">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-3 mb-3 sm:mb-4">
+                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg flex items-center justify-center">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <h4 className="text-lg font-bold text-slate-800">Farm Hygiene</h4>
+                  <h4 className="text-base sm:text-lg font-bold text-slate-800">Farm Hygiene</h4>
                 </div>
                 <div className="space-y-4">
                   {[
@@ -205,7 +239,7 @@ const DailyTasks = () => {
                     { key: 'disease_pest_check', label: 'Disease & pest check', icon: '🔍' },
                     { key: 'daily_crop_update', label: 'Daily crop update', icon: '📊' }
                   ].map((task) => (
-                    <label key={task.key} className="group flex items-center space-x-3 p-4 bg-slate-50/80 rounded-xl hover:bg-emerald-50/80 transition-all duration-200 cursor-pointer">
+                    <label key={task.key} className="group flex items-center space-x-3 p-3 sm:p-4 bg-slate-50/80 rounded-xl hover:bg-emerald-50/80 transition-all duration-200 cursor-pointer">
                       <div className="relative">
                         <input
                           type="checkbox"
@@ -226,9 +260,9 @@ const DailyTasks = () => {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <span className="text-xl">{task.icon}</span>
-                        <span className="text-sm font-medium text-slate-700 group-hover:text-emerald-700 transition-colors duration-200">
+                      <div className="flex items-center space-x-2 sm:space-x-3">
+                        <span className="text-lg sm:text-xl">{task.icon}</span>
+                        <span className="text-xs sm:text-sm font-medium text-slate-700 group-hover:text-emerald-700 transition-colors duration-200">
                           {task.label}
                         </span>
                       </div>

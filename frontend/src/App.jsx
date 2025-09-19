@@ -13,6 +13,8 @@ import CropStage from './pages/CropStage';
 import SpraySchedule from './pages/SpraySchedule';
 import Notifications from './pages/Notifications';
 import FarmNotifications from './pages/FarmNotifications';
+import FarmSpecificNotifications from './pages/FarmSpecificNotifications';
+import AdminNotificationManager from './pages/AdminNotificationManager';
 import UserManagement from './pages/UserManagement';
 import FarmUserManagement from './pages/FarmUserManagement';
 import Calendar from './pages/Calendar';
@@ -21,6 +23,12 @@ import WorkerTaskManagement from './pages/WorkerTaskManagement';
 import IssueReports from './pages/IssueReports';
 import ExpenditureManagement from './pages/ExpenditureManagement';
 import SaleStage from './pages/SaleStage';
+
+// NEW: Farm-centric pages
+import MyFarms from './pages/MyFarms';
+import FarmUserDashboard from './pages/FarmUserDashboard';
+import FarmDashboard from './pages/FarmDashboard';
+
 import { Toaster } from 'react-hot-toast';
 
 function App() {
@@ -52,11 +60,133 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             
+            {/* Admin/Superuser Dashboard */}
             <Route 
               path="/dashboard" 
               element={
                 <ProtectedRoute>
                   <Dashboard />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* NEW: Farm User Dashboard (shows overview of all assigned farms) */}
+            <Route 
+              path="/farm-user-dashboard" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <FarmUserDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* NEW: My Farms (farm selection page for farm users) */}
+            <Route 
+              path="/my-farms" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <MyFarms />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* NEW: Farm-specific Dashboard */}
+            <Route 
+              path="/farm/:farmId/dashboard" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <FarmDashboard />
+                </ProtectedRoute>
+              } 
+            />
+            
+            {/* NEW: Farm-specific Pages (no farm dropdown needed) */}
+            <Route 
+              path="/farm/:farmId/daily-tasks" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <DailyTasks />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/crop-stages" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <CropStage />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/spray-schedules" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <SpraySchedule />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/fertigations" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <Fertigation />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/workers" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <WorkerTaskManagement />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/worker-tasks" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <WorkerTaskManagement />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/issue-reports" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <IssueReports />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/expenditures" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <ExpenditureManagement />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/sales" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <SaleStage />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/farm/:farmId/notifications" 
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <FarmSpecificNotifications />
                 </ProtectedRoute>
               } 
             />
@@ -97,6 +227,7 @@ function App() {
               } 
             />
             
+            {/* Legacy routes for admin/superuser */}
             <Route 
               path="/daily-tasks" 
               element={
@@ -192,6 +323,15 @@ function App() {
               element={
                 <ProtectedRoute adminOnly>
                   <Notifications />
+                </ProtectedRoute>
+              } 
+            />
+            
+            <Route 
+              path="/admin/notification-manager" 
+              element={
+                <ProtectedRoute adminOnly>
+                  <AdminNotificationManager />
                 </ProtectedRoute>
               } 
             />

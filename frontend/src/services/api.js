@@ -68,11 +68,101 @@ export const authAPI = {
 };
 
 export const farmAPI = {
+  // General farm management (for admins)
   getFarms: () => api.get('/farms/'),
   createFarm: (farmData) => api.post('/farms/create/', farmData),
   getFarm: (id) => api.get(`/farms/${id}/`),
   updateFarm: (id, farmData) => api.put(`/farms/${id}/`, farmData),
   deleteFarm: (id) => api.delete(`/farms/${id}/`),
+  
+  // NEW: Farm User Dashboard APIs
+  getMyFarms: () => api.get('/farms/my-farms/'),
+  getFarmUserDashboard: () => api.get('/farms/dashboard/'),
+  getFarmUserNotifications: (params) => api.get('/farms/my-notifications/', { params }),
+  
+  // NEW: Farm-specific APIs (no farm dropdown needed)
+  getFarmDashboard: (farmId) => api.get(`/farms/${farmId}/dashboard/`),
+  
+  // Farm-specific Daily Tasks
+  getFarmDailyTasks: (farmId, params) => api.get(`/farms/${farmId}/daily-tasks/`, { params }),
+  submitFarmDailyTask: (farmId, taskData) => api.post(`/farms/${farmId}/daily-tasks/`, taskData),
+  
+  // Farm-specific Notifications (complete database isolation)
+  getFarmNotifications: (farmId, params) => api.get(`/farms/${farmId}/notifications/`, { params }),
+  createFarmNotification: (farmId, notificationData) => api.post(`/farms/${farmId}/notifications/`, notificationData),
+  markFarmNotificationsAsRead: (farmId, notificationIds) => api.put(`/farms/${farmId}/notifications/`, { notification_ids: notificationIds }),
+  
+  // Admin Notification Management
+  getAdminNotifications: () => api.get('/farms/admin/notifications/'),
+  sendAdminNotification: (notificationData) => api.post('/farms/admin/notifications/', notificationData),
+  
+  // Farm-specific Sales (database isolated per farm)
+  getFarmSales: (farmId, params) => api.get(`/farms/${farmId}/sales/`, { params }),
+  createFarmSale: (farmId, saleData) => api.post(`/farms/${farmId}/sales/`, saleData),
+  
+  // Farm-specific Crop Stages
+  getFarmCropStages: (farmId, params) => api.get(`/farms/${farmId}/crop-stages/`, { params }),
+  createFarmCropStage: (farmId, stageData) => api.post(`/farms/${farmId}/crop-stages/`, stageData),
+  getFarmCropStage: (farmId, stageId) => api.get(`/farms/${farmId}/crop-stages/${stageId}/`),
+  updateFarmCropStage: (farmId, stageId, stageData) => api.put(`/farms/${farmId}/crop-stages/${stageId}/`, stageData),
+  deleteFarmCropStage: (farmId, stageId) => api.delete(`/farms/${farmId}/crop-stages/${stageId}/`),
+  
+  // Farm-specific Spray/Irrigation Logs
+  getFarmSprayIrrigationLogs: (farmId, params) => api.get(`/farms/${farmId}/spray-irrigation-logs/`, { params }),
+  createFarmSprayIrrigationLog: (farmId, data) => api.post(`/farms/${farmId}/spray-irrigation-logs/`, data),
+  
+  // Farm-specific Fertigations
+  getFarmFertigations: (farmId, params) => api.get(`/farms/${farmId}/fertigations/`, { params }),
+  createFarmFertigation: (farmId, data) => api.post(`/farms/${farmId}/fertigations/`, data),
+  getFarmFertigation: (farmId, fertigationId) => api.get(`/farms/${farmId}/fertigations/${fertigationId}/`),
+  updateFarmFertigation: (farmId, fertigationId, data) => api.put(`/farms/${farmId}/fertigations/${fertigationId}/`, data),
+  deleteFarmFertigation: (farmId, fertigationId) => api.delete(`/farms/${farmId}/fertigations/${fertigationId}/`),
+  
+  // Farm-specific Spray Schedules
+  getFarmSpraySchedules: (farmId, params) => api.get(`/farms/${farmId}/spray-schedules/`, { params }),
+  createFarmSpraySchedule: (farmId, data) => api.post(`/farms/${farmId}/spray-schedules/`, data),
+  getFarmSpraySchedule: (farmId, scheduleId) => api.get(`/farms/${farmId}/spray-schedules/${scheduleId}/`),
+  updateFarmSpraySchedule: (farmId, scheduleId, data) => api.put(`/farms/${farmId}/spray-schedules/${scheduleId}/`, data),
+  deleteFarmSpraySchedule: (farmId, scheduleId) => api.delete(`/farms/${farmId}/spray-schedules/${scheduleId}/`),
+  
+  // Farm-specific Workers
+  getFarmWorkers: (farmId, params) => api.get(`/farms/${farmId}/workers/`, { params }),
+  createFarmWorker: (farmId, data) => api.post(`/farms/${farmId}/workers/`, data),
+  getFarmWorker: (farmId, workerId) => api.get(`/farms/${farmId}/workers/${workerId}/`),
+  updateFarmWorker: (farmId, workerId, data) => api.put(`/farms/${farmId}/workers/${workerId}/`, data),
+  deleteFarmWorker: (farmId, workerId) => api.delete(`/farms/${farmId}/workers/${workerId}/`),
+  
+  // Farm-specific Worker Tasks
+  getFarmWorkerTasks: (farmId, params) => api.get(`/farms/${farmId}/worker-tasks/`, { params }),
+  createFarmWorkerTask: (farmId, data) => api.post(`/farms/${farmId}/worker-tasks/`, data),
+  getFarmWorkerTask: (farmId, taskId) => api.get(`/farms/${farmId}/worker-tasks/${taskId}/`),
+  updateFarmWorkerTask: (farmId, taskId, data) => api.put(`/farms/${farmId}/worker-tasks/${taskId}/`, data),
+  deleteFarmWorkerTask: (farmId, taskId) => api.delete(`/farms/${farmId}/worker-tasks/${taskId}/`),
+  
+  // Farm-specific Issue Reports
+  getFarmIssueReports: (farmId, params) => api.get(`/farms/${farmId}/issue-reports/`, { params }),
+  createFarmIssueReport: (farmId, data) => api.post(`/farms/${farmId}/issue-reports/`, data, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  getFarmIssueReport: (farmId, issueId) => api.get(`/farms/${farmId}/issue-reports/${issueId}/`),
+  updateFarmIssueReport: (farmId, issueId, data) => api.put(`/farms/${farmId}/issue-reports/${issueId}/`, data),
+  deleteFarmIssueReport: (farmId, issueId) => api.delete(`/farms/${farmId}/issue-reports/${issueId}/`),
+  
+  // Farm-specific Expenditures
+  getFarmExpenditures: (farmId, params) => api.get(`/farms/${farmId}/expenditures/`, { params }),
+  createFarmExpenditure: (farmId, data) => api.post(`/farms/${farmId}/expenditures/`, data),
+  getFarmExpenditure: (farmId, expenditureId) => api.get(`/farms/${farmId}/expenditures/${expenditureId}/`),
+  updateFarmExpenditure: (farmId, expenditureId, data) => api.put(`/farms/${farmId}/expenditures/${expenditureId}/`, data),
+  deleteFarmExpenditure: (farmId, expenditureId) => api.delete(`/farms/${farmId}/expenditures/${expenditureId}/`),
+  
+  // Farm-specific Sales
+  getFarmSales: (farmId, params) => api.get(`/farms/${farmId}/sales/`, { params }),
+  createFarmSale: (farmId, data) => api.post(`/farms/${farmId}/sales/`, data),
+  getFarmSale: (farmId, saleId) => api.get(`/farms/${farmId}/sales/${saleId}/`),
+  updateFarmSale: (farmId, saleId, data) => api.put(`/farms/${farmId}/sales/${saleId}/`, data),
+  deleteFarmSale: (farmId, saleId) => api.delete(`/farms/${farmId}/sales/${saleId}/`),
+  
+  // Legacy APIs (for admin/superuser backward compatibility)
   getDailyTasks: (params) => api.get('/farms/daily-tasks/', { params }),
   submitDailyTask: (taskData) => api.post('/farms/daily-tasks/', taskData),
   getNotifications: (params) => api.get('/farms/notifications/', { params }),
@@ -112,13 +202,6 @@ export const farmAPI = {
   updateWorkerTask: (id, data) => api.put(`/farms/worker-tasks/${id}/`, data),
   deleteWorkerTask: (id) => api.delete(`/farms/worker-tasks/${id}/`),
   getWorkerTaskAnalytics: (params) => api.get('/farms/worker-tasks/analytics/', { params }),
-  
-  // Worker Issue Management APIs
-  getWorkerIssues: (params) => api.get('/farms/worker-issues/', { params }),
-  createWorkerIssue: (data) => api.post('/farms/worker-issues/', data),
-  getWorkerIssue: (id) => api.get(`/farms/worker-issues/${id}/`),
-  updateWorkerIssue: (id, data) => api.put(`/farms/worker-issues/${id}/`, data),
-  deleteWorkerIssue: (id) => api.delete(`/farms/worker-issues/${id}/`),
   
   // Worker Dashboard Summary
   getWorkerDashboardSummary: () => api.get('/farms/worker-dashboard/'),

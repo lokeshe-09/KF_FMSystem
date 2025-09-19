@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
 const CropStage = () => {
+  const { farmId } = useParams(); // Get farmId from URL if in farm-specific context
   const [farms, setFarms] = useState([]);
   const [cropForm, setCropForm] = useState({
     farm: '',
@@ -54,9 +56,16 @@ const CropStage = () => {
   ];
 
   useEffect(() => {
-    fetchFarms();
+    if (!farmId) {
+      // Only fetch farms if not in farm-specific context
+      fetchFarms();
+    } else {
+      // If in farm-specific context, set farm ID directly and skip farm loading
+      setCropForm(prev => ({ ...prev, farm: farmId }));
+      setLoading(false);
+    }
     fetchCropHistory();
-  }, []);
+  }, [farmId]);
 
   const fetchFarms = async () => {
     try {
@@ -75,7 +84,9 @@ const CropStage = () => {
 
   const fetchCropHistory = async () => {
     try {
-      const response = await farmAPI.getCropStages({ history: true });
+      const response = farmId 
+        ? await farmAPI.getFarmCropStages(farmId, { history: true })
+        : await farmAPI.getCropStages({ history: true });
       setCropHistory(response.data);
     } catch (error) {
       console.error('Error fetching crop history:', error);
@@ -120,7 +131,11 @@ const CropStage = () => {
       }
       
       if (editingStage) {
-        await farmAPI.updateCropStage(editingStage.id, cleanedForm);
+        if (farmId) {
+          await farmAPI.updateFarmCropStage(farmId, editingStage.id, cleanedForm);
+        } else {
+          await farmAPI.updateCropStage(editingStage.id, cleanedForm);
+        }
         toast.success('Crop stage updated successfully! 🌱', {
           duration: 3000,
           style: {
@@ -130,7 +145,11 @@ const CropStage = () => {
         });
         setEditingStage(null);
       } else {
-        await farmAPI.createCropStage(cleanedForm);
+        if (farmId) {
+          await farmAPI.createFarmCropStage(farmId, cleanedForm);
+        } else {
+          await farmAPI.createCropStage(cleanedForm);
+        }
         toast.success('New crop stage created successfully! 🌱', {
           duration: 3000,
           style: {
@@ -142,7 +161,7 @@ const CropStage = () => {
       
       // Reset form
       setCropForm({
-        farm: cropForm.farm, // Keep the selected farm
+        farm: farmId || cropForm.farm, // Use farmId if in farm-specific context, otherwise keep the selected farm
         crop_name: '',
         variety: '',
         batch_code: '',
@@ -216,7 +235,11 @@ const CropStage = () => {
   const handleDelete = async (stageId) => {
     if (window.confirm('Are you sure you want to delete this crop stage?')) {
       try {
-        await farmAPI.deleteCropStage(stageId);
+        if (farmId) {
+          await farmAPI.deleteFarmCropStage(farmId, stageId);
+        } else {
+          await farmAPI.deleteCropStage(stageId);
+        }
         toast.success('Crop stage deleted successfully!');
         fetchCropHistory();
       } catch (error) {
@@ -363,44 +386,46 @@ Pepper,Bell,PEP001,vegetative,2024-12-15,2025-03-15,1,Sample pepper crop`;
             </div>
           </div>
           
-          <form onSubmit={handleCropSubmit} className="p-8 space-y-8">
-            {/* Farm Selection */}
-            <div className="space-y-3">
-              <label className="block text-sm font-semibold text-slate-700">Select Farm</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                </div>
-                <select
-                  name="farm"
-                  value={cropForm.farm}
-                  onChange={handleCropChange}
-                  required
-                  className="w-full pl-12 pr-4 py-4 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 transition-all duration-300 text-sm sm:text-base appearance-none"
-                >
-                  <option value="">Choose your farm</option>
-                  {farms.map((farm) => (
-                    <option key={farm.id} value={farm.id}>
-                      {farm.name} - {farm.location}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                  <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+          <form onSubmit={handleCropSubmit} className="p-4 sm:p-8 space-y-6 sm:space-y-8">
+            {/* Farm Selection - Only show if not in farm-specific context */}
+            {!farmId && (
+              <div className="space-y-3">
+                <label className="block text-sm font-semibold text-slate-700">Select Farm</label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                  </div>
+                  <select
+                    name="farm"
+                    value={cropForm.farm}
+                    onChange={handleCropChange}
+                    required
+                    className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-slate-50/80 border border-slate-200 rounded-xl text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 transition-all duration-300 text-sm sm:text-base appearance-none"
+                  >
+                    <option value="">Choose your farm</option>
+                    {farms.map((farm) => (
+                      <option key={farm.id} value={farm.id}>
+                        {farm.name} - {farm.location}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
+                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Crop Identification Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="space-y-6">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
+              <div className="space-y-4 sm:space-y-6">
+                <div className="flex items-center space-x-3 mb-3 sm:mb-4">
+                  <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-lg flex items-center justify-center">
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   </div>
@@ -780,7 +805,7 @@ Pepper,Bell,PEP001,vegetative,2024-12-15,2025-03-15,1,Sample pepper crop`;
                     onClick={() => {
                       setEditingStage(null);
                       setCropForm({
-                        farm: cropForm.farm,
+                        farm: farmId || cropForm.farm,
                         crop_name: '',
                         variety: '',
                         batch_code: '',

@@ -71,6 +71,9 @@ class Notification(models.Model):
         ('harvest_reminder', 'Harvest Reminder'),
         ('fertigation_due', 'Fertigation Due'),
         ('fertigation_overdue', 'Fertigation Overdue'),
+        ('admin_message', 'Admin Message'),
+        ('farm_announcement', 'Farm Announcement'),
+        ('task_reminder', 'Task Reminder'),
         ('general', 'General'),
     )
     
@@ -78,8 +81,11 @@ class Notification(models.Model):
     message = models.TextField()
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='general')
     farm = models.ForeignKey(Farm, on_delete=models.CASCADE, null=True, blank=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name='received_notifications')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name='sent_notifications')
     is_read = models.BooleanField(default=False)
+    is_farm_wide = models.BooleanField(default=False, help_text="True if notification is for all farm users, False for specific user")
+    priority = models.CharField(max_length=10, choices=[('low', 'Low'), ('medium', 'Medium'), ('high', 'High')], default='medium')
     due_date = models.DateTimeField(null=True, blank=True)  # When the task/activity is due
     related_object_id = models.PositiveIntegerField(null=True, blank=True)  # ID of related fertigation/harvest etc
     created_at = models.DateTimeField(auto_now_add=True)
@@ -89,8 +95,11 @@ class Notification(models.Model):
         indexes = [
             models.Index(fields=['user', '-created_at']),
             models.Index(fields=['farm', '-created_at']),
+            models.Index(fields=['created_by', '-created_at']),
             models.Index(fields=['notification_type']),
             models.Index(fields=['is_read']),
+            models.Index(fields=['is_farm_wide']),
+            models.Index(fields=['priority']),
             models.Index(fields=['due_date']),
         ]
     

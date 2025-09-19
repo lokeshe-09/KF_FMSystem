@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
 const WorkerTaskManagement = () => {
+  const { farmId } = useParams(); // Get farmId from URL if in farm-specific context
   const [activeTab, setActiveTab] = useState('workers');
   const [loading, setLoading] = useState(false);
   const [tasksLoading, setTasksLoading] = useState(false);
@@ -36,7 +38,7 @@ const WorkerTaskManagement = () => {
     wage_per_day: '',
     phone_number: '',
     address: '',
-    farm: ''
+    farm: farmId || ''
   });
   
   const [taskForm, setTaskForm] = useState({
@@ -54,10 +56,13 @@ const WorkerTaskManagement = () => {
   
 
   useEffect(() => {
+    if (!farmId) {
+      // Only fetch farms if not in farm-specific context
+      fetchFarms();
+    }
     fetchWorkers();
-    fetchFarms();
     fetchTasks();
-  }, []);
+  }, [farmId]);
 
   const fetchWorkers = async (filters = {}) => {
     try {

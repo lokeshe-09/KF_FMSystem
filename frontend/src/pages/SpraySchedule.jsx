@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { farmAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const SpraySchedule = () => {
+  const { farmId } = useParams(); // Get farmId from URL if in farm-specific context
   const [farms, setFarms] = useState([]);
   const [cropStages, setCropStages] = useState([]);
   const [schedules, setSchedules] = useState([]);
@@ -22,7 +24,7 @@ const SpraySchedule = () => {
   const canvasRef = useRef(null);
 
   const [formData, setFormData] = useState({
-    farm: '',
+    farm: farmId || '',
     crop_zone: '',
     date_time: new Date().toISOString().slice(0, 16),
     product_used: '',
@@ -41,9 +43,16 @@ const SpraySchedule = () => {
   });
 
   useEffect(() => {
-    fetchFarms();
+    if (!farmId) {
+      // Only fetch farms if not in farm-specific context
+      fetchFarms();
+    } else {
+      // If in farm-specific context, set farm ID directly and fetch crop stages
+      setFormData(prev => ({ ...prev, farm: farmId }));
+      fetchCropStages(farmId);
+    }
     fetchSchedules();
-  }, []);
+  }, [farmId]);
 
   const fetchFarms = async () => {
     try {
@@ -57,7 +66,9 @@ const SpraySchedule = () => {
 
   const fetchSchedules = async () => {
     try {
-      const response = await farmAPI.getSpraySchedules();
+      const response = farmId 
+        ? await farmAPI.getFarmSpraySchedules(farmId)
+        : await farmAPI.getSpraySchedules();
       setSchedules(response.data || []);
       setLoading(false);
     } catch (error) {
@@ -71,9 +82,11 @@ const SpraySchedule = () => {
     }
   };
 
-  const fetchCropStages = async (farmId) => {
+  const fetchCropStages = async (farmIdParam) => {
     try {
-      const response = await farmAPI.getCropStages({ farm: farmId });
+      const response = farmId 
+        ? await farmAPI.getFarmCropStages(farmId)
+        : await farmAPI.getCropStages({ farm: farmIdParam });
       setCropStages(response.data || []);
     } catch (error) {
       console.error('Error fetching crop stages:', error);
@@ -137,10 +150,18 @@ const SpraySchedule = () => {
       };
 
       if (editMode && selectedSchedule) {
-        await farmAPI.updateSpraySchedule(selectedSchedule.id, submitData);
+        if (farmId) {
+          await farmAPI.updateFarmSpraySchedule(farmId, selectedSchedule.id, submitData);
+        } else {
+          await farmAPI.updateSpraySchedule(selectedSchedule.id, submitData);
+        }
         toast.success('Spray schedule updated successfully!');
       } else {
-        await farmAPI.createSpraySchedule(submitData);
+        if (farmId) {
+          await farmAPI.createFarmSpraySchedule(farmId, submitData);
+        } else {
+          await farmAPI.createSpraySchedule(submitData);
+        }
         toast.success('Spray schedule created successfully!');
       }
       
@@ -157,7 +178,7 @@ const SpraySchedule = () => {
 
   const resetForm = () => {
     setFormData({
-      farm: '',
+      farm: farmId || '',
       crop_zone: '',
       date_time: new Date().toISOString().slice(0, 16),
       product_used: '',
@@ -227,7 +248,11 @@ const SpraySchedule = () => {
   const handleDelete = async (schedule) => {
     if (window.confirm('Are you sure you want to delete this spray schedule?')) {
       try {
-        await farmAPI.deleteSpraySchedule(schedule.id);
+        if (farmId) {
+          await farmAPI.deleteFarmSpraySchedule(farmId, schedule.id);
+        } else {
+          await farmAPI.deleteSpraySchedule(schedule.id);
+        }
         toast.success('Spray schedule deleted successfully!');
         fetchSchedules();
       } catch (error) {
@@ -621,37 +646,40 @@ const SpraySchedule = () => {
               
               {/* Scrollable Form Content */}
               <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
-                <form onSubmit={handleSubmit} className="p-6 space-y-5">
+                <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
                   {/* Basic Information Section */}
                   <div className="space-y-4">
                     <h4 className="text-sm font-semibold text-slate-600 flex items-center space-x-2">
                       <span>🌱</span>
                       <span>Basic Information</span>
                     </h4>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
-                      <div className="relative">
-                        <select
-                          name="farm"
-                          value={formData.farm}
-                          onChange={(e) => handleFarmChange(e.target.value)}
-                          required
-                          className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-emerald-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
-                        >
-                          <option value="">Select Farm</option>
-                          {farms.map((farm) => (
-                            <option key={farm.id} value={farm.id}>
-                              {farm.name} - {farm.location}
-                            </option>
-                          ))}
-                        </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                    {/* Farm Selection - Only show if not in farm-specific context */}
+                    {!farmId && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
+                        <div className="relative">
+                          <select
+                            name="farm"
+                            value={formData.farm}
+                            onChange={(e) => handleFarmChange(e.target.value)}
+                            required
+                            className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-emerald-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
+                          >
+                            <option value="">Select Farm</option>
+                            {farms.map((farm) => (
+                              <option key={farm.id} value={farm.id}>
+                                {farm.name} - {farm.location}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1.5">Crop Zone *</label>
@@ -970,7 +998,7 @@ const SpraySchedule = () => {
                   </button>
                 </div>
               </div>
-              <div className="p-6 space-y-6">
+              <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div>
                     <h4 className="text-sm font-semibold text-slate-700 mb-3">Live Camera Preview</h4>

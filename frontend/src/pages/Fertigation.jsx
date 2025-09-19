@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { farmAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
 const Fertigation = () => {
+  const { farmId } = useParams(); // Get farmId from URL if in farm-specific context
   const [fertigations, setFertigations] = useState([]);
   const [farms, setFarms] = useState([]);
   const [cropStages, setCropStages] = useState([]);
@@ -21,7 +23,7 @@ const Fertigation = () => {
   const canvasRef = useRef(null);
 
   const [formData, setFormData] = useState({
-    farm: '',
+    farm: farmId || '',
     crop_stage: '',
     crop_zone_name: '',
     date_time: new Date().toISOString().slice(0, 16),
@@ -38,7 +40,7 @@ const Fertigation = () => {
   });
 
   const [scheduleData, setScheduleData] = useState({
-    farm: '',
+    farm: farmId || '',
     crop_stage: '',
     crop_zone_name: '',
     scheduled_date: new Date().toISOString().slice(0, 16),
@@ -53,8 +55,19 @@ const Fertigation = () => {
   });
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    if (!farmId) {
+      // Only fetch farms if not in farm-specific context
+      fetchData();
+    } else {
+      // If in farm-specific context, set farm ID and fetch relevant data
+      setFormData(prev => ({ ...prev, farm: farmId }));
+      setScheduleData(prev => ({ ...prev, farm: farmId }));
+      fetchCropStages(farmId);
+      fetchFertigations();
+      fetchAnalytics();
+      setLoading(false);
+    }
+  }, [farmId]);
 
   const fetchData = async () => {
     try {
@@ -71,7 +84,9 @@ const Fertigation = () => {
 
   const fetchFertigations = async () => {
     try {
-      const response = await farmAPI.getFertigations();
+      const response = farmId 
+        ? await farmAPI.getFarmFertigations(farmId)
+        : await farmAPI.getFertigations();
       setFertigations(response.data || []);
     } catch (error) {
       console.error('Error fetching fertigations:', error);
@@ -88,9 +103,11 @@ const Fertigation = () => {
     }
   };
 
-  const fetchCropStages = async (farmId) => {
+  const fetchCropStages = async (farmIdParam) => {
     try {
-      const response = await farmAPI.getCropStages({ farm: farmId });
+      const response = farmId 
+        ? await farmAPI.getFarmCropStages(farmId)
+        : await farmAPI.getCropStages({ farm: farmIdParam });
       setCropStages(response.data || []);
     } catch (error) {
       console.error('Error fetching crop stages:', error);
@@ -253,10 +270,18 @@ const Fertigation = () => {
 
     try {
       if (editingFertigation) {
-        await farmAPI.updateFertigation(editingFertigation.id, data);
+        if (farmId) {
+          await farmAPI.updateFarmFertigation(farmId, editingFertigation.id, data);
+        } else {
+          await farmAPI.updateFertigation(editingFertigation.id, data);
+        }
         toast.success('Fertigation updated successfully!');
       } else {
-        await farmAPI.createFertigation(data);
+        if (farmId) {
+          await farmAPI.createFarmFertigation(farmId, data);
+        } else {
+          await farmAPI.createFertigation(data);
+        }
         toast.success('Fertigation logged successfully!');
       }
       
@@ -304,7 +329,7 @@ const Fertigation = () => {
 
   const resetForm = () => {
     setFormData({
-      farm: '',
+      farm: farmId || '',
       crop_stage: '',
       crop_zone_name: '',
       date_time: new Date().toISOString().slice(0, 16),
@@ -365,7 +390,11 @@ const Fertigation = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this fertigation record?')) {
       try {
-        await farmAPI.deleteFertigation(id);
+        if (farmId) {
+          await farmAPI.deleteFarmFertigation(farmId, id);
+        } else {
+          await farmAPI.deleteFertigation(id);
+        }
         toast.success('Fertigation deleted successfully');
         fetchFertigations();
         fetchAnalytics();
@@ -1143,27 +1172,30 @@ const Fertigation = () => {
                       <span>🌱</span>
                       <span>Basic Information</span>
                     </h4>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
-                      <div className="relative">
-                        <select
-                          value={formData.farm}
-                          onChange={(e) => handleFarmChange(e.target.value)}
-                          required
-                          className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-blue-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
-                        >
-                          <option value="">Select Farm</option>
-                          {farms.map(farm => (
-                            <option key={farm.id} value={farm.id}>{farm.name}</option>
-                          ))}
-                        </select>
-                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                          <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                          </svg>
+                    {/* Farm Selection - Only show if not in farm-specific context */}
+                    {!farmId && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-1.5">Farm *</label>
+                        <div className="relative">
+                          <select
+                            value={formData.farm}
+                            onChange={(e) => handleFarmChange(e.target.value)}
+                            required
+                            className="w-full px-4 py-3 pr-10 bg-slate-50 border-0 rounded-full text-sm focus:bg-white focus:ring-2 focus:ring-blue-400/50 focus:shadow-sm transition-all duration-200 appearance-none cursor-pointer"
+                          >
+                            <option value="">Select Farm</option>
+                            {farms.map(farm => (
+                              <option key={farm.id} value={farm.id}>{farm.name}</option>
+                            ))}
+                          </select>
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                            <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1.5">Crop Stage (Optional)</label>
@@ -1599,20 +1631,23 @@ const Fertigation = () => {
 
                 <form onSubmit={handleScheduleSubmit} className="p-8">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-700 mb-2">Farm *</label>
-                      <select
-                        value={scheduleData.farm}
-                        onChange={(e) => handleFarmChange(e.target.value, true)}
-                        required
-                        className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      >
-                        <option value="">Select Farm</option>
-                        {farms.map(farm => (
-                          <option key={farm.id} value={farm.id}>{farm.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                    {/* Farm Selection - Only show if not in farm-specific context */}
+                    {!farmId && (
+                      <div>
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">Farm *</label>
+                        <select
+                          value={scheduleData.farm}
+                          onChange={(e) => handleFarmChange(e.target.value, true)}
+                          required
+                          className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        >
+                          <option value="">Select Farm</option>
+                          {farms.map(farm => (
+                            <option key={farm.id} value={farm.id}>{farm.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-semibold text-slate-700 mb-2">Crop/Zone Name *</label>

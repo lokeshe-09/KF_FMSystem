@@ -1629,3 +1629,767 @@ def sale_analytics(request):
     
     return Response(analytics_data)
 
+# ============================================================================
+# NEW FARM-CENTRIC VIEWS FOR FARM USERS
+# ============================================================================
+
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale
+from django.contrib.auth import get_user_model
+User = get_user_model()
+from .serializers import (
+    FarmSerializer, CreateFarmSerializer, DailyTaskSerializer, CreateDailyTaskSerializer, 
+    NotificationSerializer, SprayIrrigationLogSerializer, CreateSprayIrrigationLogSerializer, 
+    SprayScheduleSerializer, CreateSprayScheduleSerializer, UpdateSprayScheduleSerializer,
+    CropStageSerializer, CreateCropStageSerializer, FertigationSerializer, CreateFertigationSerializer,
+    WorkerSerializer, CreateWorkerSerializer, WorkerTaskSerializer, CreateWorkerTaskSerializer, UpdateWorkerTaskSerializer,
+    IssueReportSerializer, CreateIssueReportSerializer, UpdateIssueReportSerializer,
+    AdminNotificationSerializer, ExpenditureSerializer, CreateExpenditureSerializer, UpdateExpenditureSerializer,
+    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer
+)
+from datetime import date
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+def create_admin_notification(admin_user, title, message, notification_type, source_user=None, source_farm=None, related_object_id=None, related_model_name=None):
+    """
+    Helper function to create persistent admin notifications
+    """
+    return AdminNotification.objects.create(
+        admin_user=admin_user,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        source_user=source_user,
+        source_farm=source_farm,
+        related_object_id=related_object_id,
+        related_model_name=related_model_name
+    )
+
+def get_farm_access(user, farm_id):
+    """Helper function to get farm with proper access control"""
+    try:
+        if user.is_superuser:
+            return Farm.objects.get(id=farm_id, is_active=True)
+        elif user.user_type == 'admin':
+            return Farm.objects.get(id=farm_id, created_by=user, is_active=True)
+        else:
+            return user.assigned_farms.get(id=farm_id, is_active=True)
+    except Farm.DoesNotExist:
+        return None
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_farms(request):
+    """Get all farms assigned to the current farm user"""
+    try:
+        # Debug: Log user information
+        print(f"DEBUG: my_farms called by user: {request.user.username}, user_type: {request.user.user_type}")
+        
+        if request.user.user_type != 'farm_user':
+            print(f"DEBUG: User type mismatch - Expected: farm_user, Got: {request.user.user_type}")
+            return Response({'error': 'This endpoint is only for farm users'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Debug: Check all assigned farms (including inactive)
+        all_assigned_farms = request.user.assigned_farms.all()
+        print(f"DEBUG: Total assigned farms (all): {all_assigned_farms.count()}")
+        for farm in all_assigned_farms:
+            print(f"DEBUG: All farms - ID: {farm.id}, Name: {farm.name}, Active: {farm.is_active}")
+        
+        # Debug: Check assigned active farms only
+        farms = request.user.assigned_farms.filter(is_active=True)
+        print(f"DEBUG: Found {farms.count()} active assigned farms for user {request.user.username}")
+        
+        # Debug: Print active farm details
+        for farm in farms:
+            print(f"DEBUG: Active Farm - ID: {farm.id}, Name: {farm.name}, Active: {farm.is_active}")
+        
+        # Debug: Check all farms in the system
+        from farms.models import Farm
+        all_farms_count = Farm.objects.filter(is_active=True).count()
+        print(f"DEBUG: Total active farms in system: {all_farms_count}")
+        
+        serializer = FarmSerializer(farms, many=True)
+        return Response(serializer.data)
+        
+    except Exception as e:
+        print(f"ERROR in my_farms endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': 'Internal server error', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def debug_farm_assignments(request):
+    """Debug endpoint to check farm assignments - Only for debugging"""
+    try:
+        # Get all users and their farm assignments
+        from accounts.models import CustomUser
+        from farms.models import Farm
+        
+        debug_info = {
+            'current_user': {
+                'username': request.user.username,
+                'user_type': request.user.user_type,
+                'id': request.user.id,
+                'is_superuser': request.user.is_superuser,
+            },
+            'all_farms': [],
+            'all_farm_users': [],
+            'farm_assignments': {}
+        }
+        
+        # Get all farms
+        all_farms = Farm.objects.all()
+        for farm in all_farms:
+            farm_data = {
+                'id': farm.id,
+                'name': farm.name,
+                'location': farm.location,
+                'is_active': farm.is_active,
+                'created_by': farm.created_by.username if farm.created_by else None,
+                'assigned_users': [user.username for user in farm.users.all()]
+            }
+            debug_info['all_farms'].append(farm_data)
+        
+        # Get all farm users
+        farm_users = CustomUser.objects.filter(user_type='farm_user')
+        for user in farm_users:
+            user_data = {
+                'id': user.id,
+                'username': user.username,
+                'created_by': user.created_by.username if user.created_by else None,
+                'assigned_farms': [{'id': f.id, 'name': f.name} for f in user.assigned_farms.all()]
+            }
+            debug_info['all_farm_users'].append(user_data)
+        
+        return Response(debug_info)
+        
+    except Exception as e:
+        print(f"ERROR in debug_farm_assignments: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': 'Debug endpoint error', 'details': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def farm_user_dashboard(request):
+    """General dashboard for farm users showing overview of all assigned farms"""
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'This endpoint is only for farm users'}, status=status.HTTP_403_FORBIDDEN)
+    
+    farms = request.user.assigned_farms.filter(is_active=True)
+    
+    dashboard_data = {
+        'total_farms': farms.count(),
+        'farms': []
+    }
+    
+    for farm in farms:
+        # Get basic stats for each farm
+        today_tasks = DailyTask.objects.filter(user=request.user, farm=farm, date=date.today()).count()
+        total_crop_stages = CropStage.objects.filter(user=request.user, farm=farm).count()
+        pending_tasks = WorkerTask.objects.filter(user=request.user, farm=farm, status='pending').count()
+        recent_notifications = Notification.objects.filter(user=request.user, farm=farm, is_read=False).count()
+        
+        farm_data = {
+            'id': farm.id,
+            'name': farm.name,
+            'location': farm.location,
+            'size_in_acres': farm.size_in_acres,
+            'today_tasks_completed': today_tasks,
+            'total_crop_stages': total_crop_stages,
+            'pending_tasks': pending_tasks,
+            'unread_notifications': recent_notifications
+        }
+        dashboard_data['farms'].append(farm_data)
+    
+    return Response(dashboard_data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def farm_specific_dashboard(request, farm_id):
+    """Specific dashboard for a single farm"""
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'This endpoint is only for farm users'}, status=status.HTTP_403_FORBIDDEN)
+    
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    # Get comprehensive stats for this specific farm
+    today = date.today()
+    
+    # Daily tasks stats
+    today_tasks = DailyTask.objects.filter(user=request.user, farm=farm, date=today).count()
+    total_tasks_this_month = DailyTask.objects.filter(
+        user=request.user, 
+        farm=farm, 
+        date__month=today.month,
+        date__year=today.year
+    ).count()
+    
+    # Crop stages stats
+    crop_stages = CropStage.objects.filter(user=request.user, farm=farm)
+    total_crop_stages = crop_stages.count()
+    healthy_crops = crop_stages.filter(health_status='healthy').count()
+    crops_needing_attention = crop_stages.filter(health_status='needs_attention').count()
+    
+    # Worker tasks stats
+    pending_worker_tasks = WorkerTask.objects.filter(user=request.user, farm=farm, status='pending').count()
+    completed_worker_tasks = WorkerTask.objects.filter(user=request.user, farm=farm, status='completed').count()
+    
+    # Recent activities
+    recent_spray_logs = SprayIrrigationLog.objects.filter(
+        user=request.user, farm=farm
+    ).order_by('-created_at')[:5]
+    
+    recent_fertigations = Fertigation.objects.filter(
+        user=request.user, farm=farm
+    ).order_by('-created_at')[:5]
+    
+    # Notifications for this farm
+    unread_notifications = Notification.objects.filter(
+        user=request.user, farm=farm, is_read=False
+    ).count()
+    
+    dashboard_data = {
+        'farm': FarmSerializer(farm).data,
+        'stats': {
+            'today_tasks_completed': today_tasks,
+            'total_tasks_this_month': total_tasks_this_month,
+            'total_crop_stages': total_crop_stages,
+            'healthy_crops': healthy_crops,
+            'crops_needing_attention': crops_needing_attention,
+            'pending_worker_tasks': pending_worker_tasks,
+            'completed_worker_tasks': completed_worker_tasks,
+            'unread_notifications': unread_notifications
+        },
+        'recent_activities': {
+            'spray_logs': SprayIrrigationLogSerializer(recent_spray_logs, many=True).data,
+            'fertigations': FertigationSerializer(recent_fertigations, many=True).data
+        }
+    }
+    
+    return Response(dashboard_data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def farm_user_notifications(request):
+    """Get notifications for farm user from their admin"""
+    if request.user.user_type != 'farm_user':
+        return Response({'error': 'This endpoint is only for farm users'}, status=status.HTTP_403_FORBIDDEN)
+    
+    notifications = Notification.objects.filter(user=request.user).order_by('-created_at')
+    
+    # Optional filtering
+    farm_id = request.query_params.get('farm_id')
+    if farm_id:
+        notifications = notifications.filter(farm_id=farm_id)
+    
+    notification_type = request.query_params.get('type')
+    if notification_type:
+        notifications = notifications.filter(notification_type=notification_type)
+    
+    # Pagination
+    limit = request.query_params.get('limit', 20)
+    try:
+        limit = int(limit)
+        notifications = notifications[:limit]
+    except ValueError:
+        notifications = notifications[:20]
+    
+    serializer = NotificationSerializer(notifications, many=True)
+    return Response(serializer.data)
+
+# ============================================================================
+# FARM-SPECIFIC FEATURE VIEWS (No Farm Dropdown Needed)
+# ============================================================================
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def farm_daily_tasks(request, farm_id):
+    """Daily tasks for a specific farm"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        today = date.today()
+        if 'date' in request.query_params:
+            try:
+                task_date = request.query_params['date']
+                tasks = DailyTask.objects.filter(user=request.user, farm=farm, date=task_date)
+            except:
+                tasks = DailyTask.objects.filter(user=request.user, farm=farm, date=today)
+        elif 'history' in request.query_params:
+            tasks = DailyTask.objects.filter(user=request.user, farm=farm).order_by('-created_at')
+        else:
+            tasks = DailyTask.objects.filter(user=request.user, farm=farm, date=today)
+        
+        serializer = DailyTaskSerializer(tasks, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        # Create new task entry for this specific farm
+        task = DailyTask.objects.create(
+            farm=farm,
+            user=request.user,
+            date=date.today(),
+            farm_hygiene=request.data.get('farm_hygiene', False),
+            disease_pest_check=request.data.get('disease_pest_check', False),
+            daily_crop_update=request.data.get('daily_crop_update', False),
+            trellising=request.data.get('trellising', False),
+            spraying=request.data.get('spraying', False),
+            cleaning=request.data.get('cleaning', False),
+            pruning=request.data.get('pruning', False),
+            main_tank_ec=request.data.get('main_tank_ec') or None,
+            main_tank_ph=request.data.get('main_tank_ph') or None,
+            dripper_ec=request.data.get('dripper_ec') or None,
+            dripper_ph=request.data.get('dripper_ph') or None,
+        )
+        
+        # Create notification for admin
+        user_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        admin_user = request.user.created_by if hasattr(request.user, 'created_by') and request.user.created_by else None
+        
+        if admin_user and admin_user.user_type in ['admin', 'superuser']:
+            title = "Daily Task Submitted"
+            message = f"{user_name} submitted daily tasks for {farm.name} at {task.created_at.strftime('%H:%M:%S')}"
+            
+            # Create persistent admin notification
+            admin_notification = create_admin_notification(
+                admin_user=admin_user,
+                title=title,
+                message=message,
+                notification_type='daily_task',
+                source_user=request.user,
+                source_farm=farm,
+                related_object_id=task.id,
+                related_model_name='DailyTask'
+            )
+            
+            # Send WebSocket notification
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    notification_data = {
+                        'type': 'notification_message',
+                        'title': title,
+                        'message': message,
+                        'notification_type': 'daily_task',
+                        'notification_id': admin_notification.id,
+                        'farm_id': farm.id,
+                        'farm_name': farm.name,
+                        'user_id': request.user.id,
+                        'user_name': user_name,
+                        'timestamp': admin_notification.created_at.isoformat()
+                    }
+                    
+                    specific_admin_group = f'admin_{admin_user.id}_notifications'
+                    async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                    async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
+                except Exception as e:
+                    pass
+        
+        return Response(DailyTaskSerializer(task).data, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def farm_crop_stages(request, farm_id):
+    """Crop stages for a specific farm"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        crop_stages = CropStage.objects.filter(user=request.user, farm=farm).order_by('-created_at')
+        
+        # Optional filtering
+        current_stage = request.query_params.get('stage')
+        if current_stage:
+            crop_stages = crop_stages.filter(current_stage=current_stage)
+        
+        health_status = request.query_params.get('health')
+        if health_status:
+            crop_stages = crop_stages.filter(health_status=health_status)
+        
+        serializer = CropStageSerializer(crop_stages, many=True)
+        return Response(serializer.data)
+    
+    elif request.method == 'POST':
+        serializer = CreateCropStageSerializer(data=request.data)
+        if serializer.is_valid():
+            crop_stage = serializer.save(user=request.user, farm=farm)
+            return Response(CropStageSerializer(crop_stage).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def farm_crop_stage_detail(request, farm_id, stage_id):
+    """Specific crop stage detail for a farm"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    try:
+        crop_stage = CropStage.objects.get(id=stage_id, user=request.user, farm=farm)
+    except CropStage.DoesNotExist:
+        return Response({'error': 'Crop stage not found'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        serializer = CropStageSerializer(crop_stage)
+        return Response(serializer.data)
+    
+    elif request.method == 'PUT':
+        serializer = CreateCropStageSerializer(crop_stage, data=request.data, partial=True)
+        if serializer.is_valid():
+            crop_stage = serializer.save()
+            return Response(CropStageSerializer(crop_stage).data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    elif request.method == 'DELETE':
+        crop_stage.delete()
+        return Response({'message': 'Crop stage deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
+
+@api_view(['GET', 'POST', 'PUT'])
+@permission_classes([IsAuthenticated])
+def farm_notifications(request, farm_id):
+    """Enhanced farm-specific notifications with complete database isolation and admin capabilities"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        # Get notifications ONLY for this specific farm - complete isolation
+        notifications = Notification.objects.filter(farm=farm).order_by('-priority', '-created_at')
+        
+        # For farm users, show their personal notifications + farm-wide announcements
+        if request.user.user_type == 'farm_user':
+            from django.db import models
+            notifications = notifications.filter(
+                models.Q(user=request.user, is_farm_wide=False) |  # Personal notifications
+                models.Q(is_farm_wide=True, user__isnull=True)     # Farm-wide announcements
+            )
+        
+        # Include unread count
+        unread_count = notifications.filter(is_read=False).count()
+        
+        notifications_data = []
+        for notif in notifications:
+            notifications_data.append({
+                'id': notif.id,
+                'title': notif.title,
+                'message': notif.message,
+                'notification_type': notif.notification_type,
+                'priority': notif.priority,
+                'is_read': notif.is_read,
+                'is_farm_wide': notif.is_farm_wide,
+                'created_by': notif.created_by.username if notif.created_by else 'System',
+                'created_at': notif.created_at,
+                'due_date': notif.due_date,
+            })
+        
+        return Response({
+            'notifications': notifications_data,
+            'unread_count': unread_count,
+            'total_count': len(notifications_data)
+        })
+    
+    elif request.method == 'POST':
+        # Only admins can create notifications
+        if request.user.user_type not in ['admin'] and not request.user.is_superuser:
+            return Response({'error': 'Only admins can create notifications'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Validate that admin has access to this farm
+        if not (request.user.is_superuser or farm.created_by == request.user):
+            return Response({'error': 'You can only send notifications to farms you manage'}, status=status.HTTP_403_FORBIDDEN)
+        
+        is_farm_wide = request.data.get('is_farm_wide', False)
+        target_user_id = request.data.get('user_id')
+        
+        # If targeting specific user, validate user has access to this farm
+        if target_user_id and not is_farm_wide:
+            try:
+                target_user = farm.users.get(id=target_user_id)
+            except:
+                return Response({'error': 'Target user not found or not assigned to this farm'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            target_user = None
+        
+        # Create notification specifically for this farm
+        notification = Notification.objects.create(
+            title=request.data.get('title', ''),
+            message=request.data.get('message', ''),
+            notification_type=request.data.get('notification_type', 'admin_message'),
+            priority=request.data.get('priority', 'medium'),
+            farm=farm,  # Ensures notification is tied to this specific farm
+            user=target_user,  # Specific user or None for farm-wide
+            is_farm_wide=is_farm_wide,
+            created_by=request.user,  # Track which admin created it
+            due_date=request.data.get('due_date') if request.data.get('due_date') else None,
+        )
+        
+        return Response({
+            'id': notification.id,
+            'title': notification.title,
+            'message': notification.message,
+            'farm_id': farm.id,
+            'is_farm_wide': notification.is_farm_wide,
+            'priority': notification.priority,
+            'created_at': notification.created_at,
+        }, status=status.HTTP_201_CREATED)
+    
+    elif request.method == 'PUT':
+        # Mark notifications as read
+        notification_ids = request.data.get('notification_ids', [])
+        if notification_ids:
+            from django.db import models
+            
+            # Debug: Log the request details
+            logger.info(f"User {request.user} attempting to mark notifications as read: {notification_ids} for farm {farm.id}")
+            
+            # First, let's check what notifications exist
+            all_notifications = Notification.objects.filter(
+                id__in=notification_ids,
+                farm=farm
+            )
+            
+            logger.info(f"Found notifications in farm {farm.id}: {[(n.id, n.user_id, n.is_farm_wide, n.is_read) for n in all_notifications]}")
+            
+            # Update ALL notifications that the user can see (matching GET request logic)
+            # This ensures any notification shown in the UI can be marked as read
+            if request.user.user_type == 'farm_user':
+                # Farm users can mark read:
+                # 1. Their personal notifications 
+                # 2. ANY farm-wide notification (regardless of user field)
+                notifications_to_update = Notification.objects.filter(
+                    id__in=notification_ids,
+                    farm=farm
+                ).filter(
+                    models.Q(user=request.user) |                       # Personal notifications
+                    models.Q(is_farm_wide=True)                        # All farm-wide notifications
+                )
+            else:
+                # Admin/superuser can mark any notification in their farm as read
+                notifications_to_update = Notification.objects.filter(
+                    id__in=notification_ids,
+                    farm=farm
+                )
+            
+            logger.info(f"Notifications matching access criteria: {[(n.id, n.user_id, n.is_farm_wide, n.is_read) for n in notifications_to_update]}")
+            
+            updated = notifications_to_update.update(is_read=True)
+            
+            logger.info(f"Updated {updated} notifications to read status")
+            
+            if updated > 0:
+                return Response({'updated': updated, 'message': f'{updated} notifications marked as read'})
+            else:
+                return Response({'error': 'No notifications found or already read'}, status=status.HTTP_404_NOT_FOUND)
+        
+        return Response({'error': 'No notification IDs provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def admin_notifications(request):
+    """Admin notification management - send notifications to specific farms/users"""
+    if request.user.user_type not in ['admin'] and not request.user.is_superuser:
+        return Response({'error': 'Only admins can access this endpoint'}, status=status.HTTP_403_FORBIDDEN)
+    
+    if request.method == 'GET':
+        # Get all farms managed by this admin
+        if request.user.is_superuser:
+            managed_farms = Farm.objects.filter(is_active=True)
+        else:
+            managed_farms = Farm.objects.filter(created_by=request.user, is_active=True)
+        
+        farms_data = []
+        for farm in managed_farms:
+            # Get farm users
+            farm_users = farm.users.filter(user_type='farm_user')
+            users_data = [{'id': user.id, 'username': user.username, 'full_name': f"{user.first_name} {user.last_name}".strip()} for user in farm_users]
+            
+            # Get recent notifications sent to this farm
+            recent_notifications = Notification.objects.filter(
+                farm=farm, 
+                created_by=request.user
+            ).order_by('-created_at')[:5]
+            
+            notifications_data = []
+            for notif in recent_notifications:
+                notifications_data.append({
+                    'id': notif.id,
+                    'title': notif.title,
+                    'notification_type': notif.notification_type,
+                    'priority': notif.priority,
+                    'is_farm_wide': notif.is_farm_wide,
+                    'target_user': notif.user.username if notif.user else 'All Users',
+                    'created_at': notif.created_at,
+                })
+            
+            farms_data.append({
+                'id': farm.id,
+                'name': farm.name,
+                'location': farm.location,
+                'users': users_data,
+                'recent_notifications': notifications_data,
+            })
+        
+        return Response({'farms': farms_data})
+    
+    elif request.method == 'POST':
+        # Send notification to specific farm
+        farm_id = request.data.get('farm_id')
+        if not farm_id:
+            return Response({'error': 'Farm ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate admin has access to this farm
+        try:
+            if request.user.is_superuser:
+                farm = Farm.objects.get(id=farm_id, is_active=True)
+            else:
+                farm = Farm.objects.get(id=farm_id, created_by=request.user, is_active=True)
+        except Farm.DoesNotExist:
+            return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+        
+        is_farm_wide = request.data.get('is_farm_wide', False)
+        target_user_ids = request.data.get('user_ids', [])
+        
+        notifications_created = []
+        
+        if is_farm_wide:
+            # Create farm-wide notification
+            notification = Notification.objects.create(
+                title=request.data.get('title', ''),
+                message=request.data.get('message', ''),
+                notification_type=request.data.get('notification_type', 'farm_announcement'),
+                priority=request.data.get('priority', 'medium'),
+                farm=farm,
+                user=None,
+                is_farm_wide=True,
+                created_by=request.user,
+                due_date=request.data.get('due_date') if request.data.get('due_date') else None,
+            )
+            notifications_created.append(notification.id)
+        else:
+            # Create notifications for specific users
+            if not target_user_ids:
+                return Response({'error': 'User IDs are required for user-specific notifications'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            for user_id in target_user_ids:
+                try:
+                    target_user = farm.users.get(id=user_id)
+                    notification = Notification.objects.create(
+                        title=request.data.get('title', ''),
+                        message=request.data.get('message', ''),
+                        notification_type=request.data.get('notification_type', 'admin_message'),
+                        priority=request.data.get('priority', 'medium'),
+                        farm=farm,
+                        user=target_user,
+                        is_farm_wide=False,
+                        created_by=request.user,
+                        due_date=request.data.get('due_date') if request.data.get('due_date') else None,
+                    )
+                    notifications_created.append(notification.id)
+                except:
+                    continue  # Skip invalid user IDs
+        
+        return Response({
+            'message': f'{len(notifications_created)} notification(s) sent successfully',
+            'notifications_created': notifications_created,
+            'farm_id': farm.id,
+        }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def farm_sales(request, farm_id):
+    """Farm-specific sales - complete database isolation per farm"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+    
+    if request.method == 'GET':
+        # Get sales ONLY for this specific farm - complete isolation
+        sales = Sale.objects.filter(farm=farm, user=request.user)
+        
+        # Apply filters if provided
+        payment_status = request.GET.get('payment_status')
+        if payment_status:
+            sales = sales.filter(payment_status=payment_status)
+            
+        crop_name = request.GET.get('crop_name')
+        if crop_name:
+            sales = sales.filter(crop_name__icontains=crop_name)
+            
+        buyer_name = request.GET.get('buyer_name')
+        if buyer_name:
+            sales = sales.filter(buyer_name__icontains=buyer_name)
+            
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        if date_from:
+            sales = sales.filter(sale_date__gte=date_from)
+        if date_to:
+            sales = sales.filter(sale_date__lte=date_to)
+        
+        # Serialize sales data
+        sales_data = []
+        for sale in sales:
+            sales_data.append({
+                'id': sale.id,
+                'crop_name': sale.crop_name,
+                'batch_code': sale.batch_code,
+                'quantity_sold': float(sale.quantity_sold) if sale.quantity_sold else 0,
+                'unit': sale.unit,
+                'price_per_unit': float(sale.price_per_unit) if sale.price_per_unit else 0,
+                'total_amount': float(sale.total_amount),
+                'buyer_name': sale.buyer_name,
+                'buyer_contact': sale.buyer_contact,
+                'sale_date': sale.sale_date,
+                'payment_status': sale.payment_status,
+                'amount_received': float(sale.amount_received),
+                'quality_grade': sale.quality_grade,
+                'notes': sale.notes,
+                'created_at': sale.created_at,
+            })
+        
+        return Response(sales_data)
+    
+    elif request.method == 'POST':
+        # Create sale for this specific farm only
+        data = request.data.copy()
+        
+        sale = Sale.objects.create(
+            farm=farm,  # Ensures sale is tied to this specific farm only
+            user=request.user,
+            crop_name=data.get('crop_name', ''),
+            batch_code=data.get('batch_code', ''),
+            quantity_sold=data.get('quantity_sold'),
+            unit=data.get('unit', 'kg'),
+            price_per_unit=data.get('price_per_unit'),
+            total_amount=data.get('total_amount', 0),
+            buyer_name=data.get('buyer_name', ''),
+            buyer_contact=data.get('buyer_contact', ''),
+            buyer_address=data.get('buyer_address', ''),
+            sale_date=data.get('sale_date'),
+            payment_status=data.get('payment_status', 'pending'),
+            payment_due_date=data.get('payment_due_date'),
+            amount_received=data.get('amount_received', 0),
+            quality_grade=data.get('quality_grade', ''),
+            transportation_cost=data.get('transportation_cost', 0),
+            commission_amount=data.get('commission_amount', 0),
+            notes=data.get('notes', ''),
+            invoice_number=data.get('invoice_number', ''),
+        )
+        
+        return Response({
+            'id': sale.id,
+            'crop_name': sale.crop_name,
+            'total_amount': float(sale.total_amount),
+            'farm_id': farm.id,
+            'created_at': sale.created_at,
+        }, status=status.HTTP_201_CREATED)
