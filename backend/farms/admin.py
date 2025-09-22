@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Farm, DailyTask, Notification, SprayIrrigationLog, CropStage, Fertigation, AdminNotification
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, CropStage, Fertigation, AdminNotification, PlantDiseasePrediction
 from accounts.models import CustomUser
 
 @admin.register(Farm)
@@ -242,4 +242,100 @@ class AdminNotificationAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         queryset = super().get_queryset(request)
         return queryset.select_related("admin_user", "source_user", "source_farm")
+
+@admin.register(PlantDiseasePrediction)
+class PlantDiseasePredictionAdmin(admin.ModelAdmin):
+    list_display = ('farm_name', 'user_name', 'disease_status', 'confidence_level', 'disease_count', 'analysis_timestamp', 'is_resolved')
+    list_filter = ('disease_status', 'confidence_level', 'is_resolved', 'analysis_timestamp', 'farm', 'gemini_model_version')
+    search_fields = ('farm__name', 'user__username', 'user__first_name', 'user__last_name', 'ai_analysis', 'diseases_detected')
+    readonly_fields = ('analysis_timestamp', 'created_at', 'updated_at', 'processing_time_ms', 'disease_count', 'primary_disease', 'severity_level')
+    ordering = ('-analysis_timestamp',)
+    list_per_page = 50
+    date_hierarchy = 'analysis_timestamp'
+
+    actions = ['mark_as_resolved', 'mark_as_unresolved']
+
+    fieldsets = (
+        ('Basic Information', {
+            'fields': ('farm', 'user', 'crop_stage', 'location_in_farm')
+        }),
+        ('Image Data', {
+            'fields': ('image_filename', 'image_format', 'image_width', 'image_height', 'image_size_bytes', 'image_data'),
+            'classes': ('collapse',)
+        }),
+        ('AI Analysis Results', {
+            'fields': ('disease_status', 'diseases_detected', 'confidence_level', 'confidence_score', 'ai_analysis')
+        }),
+        ('Recommendations', {
+            'fields': ('remedies_suggested', 'prevention_tips')
+        }),
+        ('User Actions', {
+            'fields': ('user_notes', 'is_resolved', 'actions_taken')
+        }),
+        ('Metadata', {
+            'fields': ('gemini_model_version', 'processing_time_ms', 'analysis_timestamp', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+        ('Summary Properties', {
+            'fields': ('disease_count', 'primary_disease', 'severity_level'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    def farm_name(self, obj):
+        return obj.farm.name if obj.farm else '-'
+    farm_name.short_description = 'Farm'
+    farm_name.admin_order_field = 'farm__name'
+
+    def user_name(self, obj):
+        if obj.user:
+            full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return full_name if full_name else obj.user.username
+        return '-'
+    user_name.short_description = 'User'
+    user_name.admin_order_field = 'user__username'
+
+    def disease_count(self, obj):
+        return obj.disease_count
+    disease_count.short_description = 'Diseases Count'
+
+    def primary_disease(self, obj):
+        disease = obj.primary_disease
+        return disease.get('name', 'None') if disease else 'None'
+    primary_disease.short_description = 'Primary Disease'
+
+    def severity_level(self, obj):
+        return obj.severity_level.title()
+    severity_level.short_description = 'Severity'
+
+    def image_dimensions(self, obj):
+        if obj.image_width and obj.image_height:
+            return f"{obj.image_width} × {obj.image_height} px"
+        return 'Unknown'
+    image_dimensions.short_description = 'Image Size'
+
+    def image_size_display(self, obj):
+        if obj.image_size_bytes:
+            if obj.image_size_bytes < 1024:
+                return f"{obj.image_size_bytes} B"
+            elif obj.image_size_bytes < 1024 * 1024:
+                return f"{obj.image_size_bytes / 1024:.1f} KB"
+            else:
+                return f"{obj.image_size_bytes / (1024 * 1024):.1f} MB"
+        return 'Unknown'
+    image_size_display.short_description = 'File Size'
+
+    def mark_as_resolved(self, request, queryset):
+        updated = queryset.update(is_resolved=True)
+        self.message_user(request, f'{updated} predictions marked as resolved.')
+    mark_as_resolved.short_description = 'Mark selected predictions as resolved'
+
+    def mark_as_unresolved(self, request, queryset):
+        updated = queryset.update(is_resolved=False)
+        self.message_user(request, f'{updated} predictions marked as unresolved.')
+    mark_as_unresolved.short_description = 'Mark selected predictions as unresolved'
+
+    def get_queryset(self, request):
+        queryset = super().get_queryset(request)
+        return queryset.select_related('farm', 'user', 'crop_stage')
 

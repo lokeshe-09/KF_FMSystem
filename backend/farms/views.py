@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale, PlantDiseasePrediction
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from .serializers import (
@@ -14,7 +14,9 @@ from .serializers import (
     WorkerSerializer, CreateWorkerSerializer, WorkerTaskSerializer, CreateWorkerTaskSerializer, UpdateWorkerTaskSerializer,
     IssueReportSerializer, CreateIssueReportSerializer, UpdateIssueReportSerializer,
     AdminNotificationSerializer, ExpenditureSerializer, CreateExpenditureSerializer, UpdateExpenditureSerializer,
-    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer
+    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer,
+    PlantDiseasePredictionSerializer, CreatePlantDiseasePredictionSerializer,
+    UpdatePlantDiseasePredictionSerializer, PlantDiseasePredictionListSerializer
 )
 from datetime import date
 from channels.layers import get_channel_layer
@@ -223,6 +225,126 @@ def daily_tasks(request):
                     pass
             
         return Response(DailyTaskSerializer(task).data, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def daily_task_detail(request, task_id):
+    """Get, update or delete a specific daily task (legacy endpoint for admin/superuser)"""
+    try:
+        if request.user.is_superuser:
+            task = DailyTask.objects.get(id=task_id)
+        elif request.user.user_type == 'admin':
+            # Admin can only access tasks from farms they created
+            task = DailyTask.objects.get(id=task_id, farm__created_by=request.user)
+        else:
+            # Farm users can only access their own tasks
+            task = DailyTask.objects.get(id=task_id, user=request.user)
+    except DailyTask.DoesNotExist:
+        return Response({'error': 'Daily task not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = DailyTaskSerializer(task)
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        # Update existing task
+        for field in ['farm_hygiene', 'disease_pest_check', 'daily_crop_update',
+                      'trellising', 'spraying', 'cleaning', 'pruning']:
+            if field in request.data:
+                setattr(task, field, request.data.get(field, False))
+
+        # Update EC/pH measurements
+        for field in ['main_tank_ec', 'main_tank_ph', 'dripper_ec', 'dripper_ph']:
+            if field in request.data:
+                value = request.data.get(field)
+                setattr(task, field, value if value else None)
+
+        task.save()
+
+        # Create notification for admin (farm creator) only if task belongs to a farm user
+        if task.user.user_type == 'farm_user':
+            user_name = f"{task.user.first_name} {task.user.last_name}".strip() or task.user.username
+            admin_user = task.farm.created_by  # Use farm creator as admin
+
+            if admin_user and admin_user.user_type in ['admin', 'superuser']:
+                # Count completed tasks
+                completed_tasks = []
+                if task.farm_hygiene:
+                    completed_tasks.append("Farm Hygiene")
+                if task.disease_pest_check:
+                    completed_tasks.append("Disease & Pest Check")
+                if task.daily_crop_update:
+                    completed_tasks.append("Daily Crop Update")
+                if task.trellising:
+                    completed_tasks.append("Trellising")
+                if task.spraying:
+                    completed_tasks.append("Spraying")
+                if task.cleaning:
+                    completed_tasks.append("Cleaning")
+                if task.pruning:
+                    completed_tasks.append("Pruning")
+
+                # Check water measurements
+                measurements = []
+                if task.main_tank_ec or task.main_tank_ph:
+                    measurements.append("Main Tank")
+                if task.dripper_ec or task.dripper_ph:
+                    measurements.append("Dripper")
+
+                title = "Daily Tasks Updated"
+                message = f"{user_name} updated daily tasks for {task.farm.name}. "
+                message += f"Tasks: {', '.join(completed_tasks) if completed_tasks else 'None'}. "
+                if measurements:
+                    message += f"Water measurements updated for: {', '.join(measurements)}. "
+                message += f"Updated at {task.updated_at.strftime('%H:%M:%S')}"
+
+                # Create persistent admin notification
+                admin_notification = create_admin_notification(
+                    admin_user=admin_user,
+                    title=title,
+                    message=message,
+                    notification_type='daily_task',
+                    source_user=task.user,
+                    source_farm=task.farm,
+                    related_object_id=task.id,
+                    related_model_name='DailyTask'
+                )
+
+                # Send WebSocket notification
+                channel_layer = get_channel_layer()
+                if channel_layer:
+                    try:
+                        notification_data = {
+                            'type': 'notification_message',
+                            'title': title,
+                            'message': message,
+                            'notification_type': 'daily_task',
+                            'notification_id': admin_notification.id,
+                            'farm_id': task.farm.id,
+                            'farm_name': task.farm.name,
+                            'user_id': task.user.id,
+                            'user_name': user_name,
+                            'completed_tasks': completed_tasks,
+                            'measurements': measurements,
+                            'timestamp': admin_notification.created_at.isoformat(),
+                            'action': 'updated'
+                        }
+
+                        specific_admin_group = f'admin_{admin_user.id}_notifications'
+                        async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                        async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
+                    except Exception as e:
+                        logger.error(f"Failed to send WebSocket notification: {e}")
+
+        return Response({
+            'success': True,
+            'message': 'Daily task updated successfully',
+            'task_data': DailyTaskSerializer(task).data
+        })
+
+    elif request.method == 'DELETE':
+        task.delete()
+        return Response({'message': 'Daily task deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
@@ -1637,7 +1759,7 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale, PlantDiseasePrediction
 from django.contrib.auth import get_user_model
 User = get_user_model()
 from .serializers import (
@@ -1648,7 +1770,9 @@ from .serializers import (
     WorkerSerializer, CreateWorkerSerializer, WorkerTaskSerializer, CreateWorkerTaskSerializer, UpdateWorkerTaskSerializer,
     IssueReportSerializer, CreateIssueReportSerializer, UpdateIssueReportSerializer,
     AdminNotificationSerializer, ExpenditureSerializer, CreateExpenditureSerializer, UpdateExpenditureSerializer,
-    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer
+    SaleSerializer, CreateSaleSerializer, UpdateSaleSerializer,
+    PlantDiseasePredictionSerializer, CreatePlantDiseasePredictionSerializer,
+    UpdatePlantDiseasePredictionSerializer, PlantDiseasePredictionListSerializer
 )
 from datetime import date
 from channels.layers import get_channel_layer
@@ -1934,11 +2058,29 @@ def farm_daily_tasks(request, farm_id):
         return Response(serializer.data)
     
     elif request.method == 'POST':
+        today = date.today()
+
+        # Check if user has already submitted tasks for today for this farm
+        existing_task = DailyTask.objects.filter(
+            user=request.user,
+            farm=farm,
+            date=today
+        ).first()
+
+        if existing_task:
+            return Response({
+                'error': 'Daily tasks already submitted for today',
+                'message': f'You have already submitted daily tasks for {farm.name} today at {existing_task.created_at.strftime("%H:%M:%S")}',
+                'already_submitted': True,
+                'submission_time': existing_task.created_at,
+                'task_data': DailyTaskSerializer(existing_task).data
+            }, status=status.HTTP_400_BAD_REQUEST)
+
         # Create new task entry for this specific farm
         task = DailyTask.objects.create(
             farm=farm,
             user=request.user,
-            date=date.today(),
+            date=today,
             farm_hygiene=request.data.get('farm_hygiene', False),
             disease_pest_check=request.data.get('disease_pest_check', False),
             daily_crop_update=request.data.get('daily_crop_update', False),
@@ -1951,15 +2093,43 @@ def farm_daily_tasks(request, farm_id):
             dripper_ec=request.data.get('dripper_ec') or None,
             dripper_ph=request.data.get('dripper_ph') or None,
         )
-        
-        # Create notification for admin
+
+        # Create notification for admin (farm creator)
         user_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
-        admin_user = request.user.created_by if hasattr(request.user, 'created_by') and request.user.created_by else None
-        
+        admin_user = farm.created_by  # Use farm creator as admin
+
         if admin_user and admin_user.user_type in ['admin', 'superuser']:
-            title = "Daily Task Submitted"
-            message = f"{user_name} submitted daily tasks for {farm.name} at {task.created_at.strftime('%H:%M:%S')}"
-            
+            # Count completed tasks
+            completed_tasks = []
+            if task.farm_hygiene:
+                completed_tasks.append("Farm Hygiene")
+            if task.disease_pest_check:
+                completed_tasks.append("Disease & Pest Check")
+            if task.daily_crop_update:
+                completed_tasks.append("Daily Crop Update")
+            if task.trellising:
+                completed_tasks.append("Trellising")
+            if task.spraying:
+                completed_tasks.append("Spraying")
+            if task.cleaning:
+                completed_tasks.append("Cleaning")
+            if task.pruning:
+                completed_tasks.append("Pruning")
+
+            # Check water measurements
+            measurements = []
+            if task.main_tank_ec or task.main_tank_ph:
+                measurements.append("Main Tank")
+            if task.dripper_ec or task.dripper_ph:
+                measurements.append("Dripper")
+
+            title = "Daily Tasks Completed"
+            message = f"{user_name} completed daily tasks for {farm.name}. "
+            message += f"Tasks: {', '.join(completed_tasks) if completed_tasks else 'None'}. "
+            if measurements:
+                message += f"Water measurements recorded for: {', '.join(measurements)}. "
+            message += f"Submitted at {task.created_at.strftime('%H:%M:%S')}"
+
             # Create persistent admin notification
             admin_notification = create_admin_notification(
                 admin_user=admin_user,
@@ -1971,7 +2141,7 @@ def farm_daily_tasks(request, farm_id):
                 related_object_id=task.id,
                 related_model_name='DailyTask'
             )
-            
+
             # Send WebSocket notification
             channel_layer = get_channel_layer()
             if channel_layer:
@@ -1986,16 +2156,144 @@ def farm_daily_tasks(request, farm_id):
                         'farm_name': farm.name,
                         'user_id': request.user.id,
                         'user_name': user_name,
+                        'completed_tasks': completed_tasks,
+                        'measurements': measurements,
                         'timestamp': admin_notification.created_at.isoformat()
                     }
-                    
+
                     specific_admin_group = f'admin_{admin_user.id}_notifications'
                     async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
                     async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
                 except Exception as e:
-                    pass
-        
-        return Response(DailyTaskSerializer(task).data, status=status.HTTP_201_CREATED)
+                    logger.error(f"Failed to send WebSocket notification: {e}")
+
+        return Response({
+            'success': True,
+            'message': 'Daily tasks submitted successfully',
+            'task_data': DailyTaskSerializer(task).data,
+            'notification_sent': admin_user is not None
+        }, status=status.HTTP_201_CREATED)
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def farm_daily_task_detail(request, farm_id, task_id):
+    """Get, update or delete a specific daily task for a farm"""
+    farm = get_farm_access(request.user, farm_id)
+    if not farm:
+        return Response({'error': 'Farm not found or access denied'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        task = DailyTask.objects.get(
+            id=task_id,
+            user=request.user,
+            farm=farm
+        )
+    except DailyTask.DoesNotExist:
+        return Response({'error': 'Daily task not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        serializer = DailyTaskSerializer(task)
+        return Response(serializer.data)
+
+    elif request.method == 'PUT':
+        # Update existing task
+        for field in ['farm_hygiene', 'disease_pest_check', 'daily_crop_update',
+                      'trellising', 'spraying', 'cleaning', 'pruning']:
+            if field in request.data:
+                setattr(task, field, request.data.get(field, False))
+
+        # Update EC/pH measurements
+        for field in ['main_tank_ec', 'main_tank_ph', 'dripper_ec', 'dripper_ph']:
+            if field in request.data:
+                value = request.data.get(field)
+                setattr(task, field, value if value else None)
+
+        task.save()
+
+        # Create notification for admin (farm creator)
+        user_name = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        admin_user = farm.created_by  # Use farm creator as admin
+
+        if admin_user and admin_user.user_type in ['admin', 'superuser']:
+            # Count completed tasks
+            completed_tasks = []
+            if task.farm_hygiene:
+                completed_tasks.append("Farm Hygiene")
+            if task.disease_pest_check:
+                completed_tasks.append("Disease & Pest Check")
+            if task.daily_crop_update:
+                completed_tasks.append("Daily Crop Update")
+            if task.trellising:
+                completed_tasks.append("Trellising")
+            if task.spraying:
+                completed_tasks.append("Spraying")
+            if task.cleaning:
+                completed_tasks.append("Cleaning")
+            if task.pruning:
+                completed_tasks.append("Pruning")
+
+            # Check water measurements
+            measurements = []
+            if task.main_tank_ec or task.main_tank_ph:
+                measurements.append("Main Tank")
+            if task.dripper_ec or task.dripper_ph:
+                measurements.append("Dripper")
+
+            title = "Daily Tasks Updated"
+            message = f"{user_name} updated daily tasks for {farm.name}. "
+            message += f"Tasks: {', '.join(completed_tasks) if completed_tasks else 'None'}. "
+            if measurements:
+                message += f"Water measurements updated for: {', '.join(measurements)}. "
+            message += f"Updated at {task.updated_at.strftime('%H:%M:%S')}"
+
+            # Create persistent admin notification
+            admin_notification = create_admin_notification(
+                admin_user=admin_user,
+                title=title,
+                message=message,
+                notification_type='daily_task',
+                source_user=request.user,
+                source_farm=farm,
+                related_object_id=task.id,
+                related_model_name='DailyTask'
+            )
+
+            # Send WebSocket notification
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                try:
+                    notification_data = {
+                        'type': 'notification_message',
+                        'title': title,
+                        'message': message,
+                        'notification_type': 'daily_task',
+                        'notification_id': admin_notification.id,
+                        'farm_id': farm.id,
+                        'farm_name': farm.name,
+                        'user_id': request.user.id,
+                        'user_name': user_name,
+                        'completed_tasks': completed_tasks,
+                        'measurements': measurements,
+                        'timestamp': admin_notification.created_at.isoformat(),
+                        'action': 'updated'
+                    }
+
+                    specific_admin_group = f'admin_{admin_user.id}_notifications'
+                    async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                    async_to_sync(channel_layer.group_send)('admin_notifications', notification_data)
+                except Exception as e:
+                    logger.error(f"Failed to send WebSocket notification: {e}")
+
+        return Response({
+            'success': True,
+            'message': 'Daily tasks updated successfully',
+            'task_data': DailyTaskSerializer(task).data,
+            'notification_sent': admin_user is not None
+        })
+
+    elif request.method == 'DELETE':
+        task.delete()
+        return Response({'message': 'Daily task deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
@@ -2393,3 +2691,439 @@ def farm_sales(request, farm_id):
             'farm_id': farm.id,
             'created_at': sale.created_at,
         }, status=status.HTTP_201_CREATED)
+
+# Plant Disease Prediction Views with Gemini AI Integration
+
+import google.generativeai as genai
+import base64
+import io
+import json
+import time
+from PIL import Image
+from django.conf import settings
+from decouple import config
+
+# Configure Gemini AI
+genai.configure(api_key=config('GEMINI_API_KEY'))
+
+def extract_image_metadata(image_data):
+    """
+    Extract metadata from base64 encoded image
+    """
+    try:
+        # Decode base64 image
+        if image_data.startswith('data:image/'):
+            # Extract format from data URL
+            format_part = image_data.split(';')[0].split('/')[-1]
+            # Remove data URL prefix
+            base64_data = image_data.split(',')[1]
+        else:
+            format_part = 'unknown'
+            base64_data = image_data
+
+        image_bytes = base64.b64decode(base64_data)
+
+        # Calculate size in bytes
+        size_bytes = len(image_bytes)
+
+        # Open image to get dimensions
+        image = Image.open(io.BytesIO(image_bytes))
+        width, height = image.size
+
+        # Get format
+        image_format = image.format.lower() if image.format else format_part
+
+        return {
+            'size_bytes': size_bytes,
+            'width': width,
+            'height': height,
+            'format': image_format
+        }
+
+    except Exception as e:
+        logger.warning(f"Failed to extract image metadata: {str(e)}")
+        return {
+            'size_bytes': None,
+            'width': None,
+            'height': None,
+            'format': None
+        }
+
+def analyze_plant_image_with_gemini(image_data, model_version='gemini-2.5-pro'):
+    """
+    Analyze plant image using Gemini AI for disease detection with plant validation
+    """
+    try:
+        start_time = time.time()
+
+        # Initialize the model
+        model = genai.GenerativeModel(model_version)
+
+        # Decode base64 image
+        if image_data.startswith('data:image/'):
+            # Remove data URL prefix
+            image_data = image_data.split(',')[1]
+
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+
+        # First, validate if the image contains plant material
+        validation_prompt = """
+        IMPORTANT: You are a strict plant identification expert. Analyze this image and determine if it shows plant material (leaves, stems, flowers, fruits, or any plant parts).
+
+        Respond with ONLY a JSON object in this exact format:
+        {
+            "is_plant": true/false,
+            "confidence": 0-100,
+            "description": "Brief description of what you see"
+        }
+
+        STRICT RULES:
+        - Only return true if you can clearly see plant material (leaves, stems, flowers, fruits, etc.)
+        - Return false for: animals, people, objects, buildings, landscapes without clear plant focus
+        - Return false if the image is unclear, too dark, or you cannot identify plant material with confidence
+        - Be very strict - when in doubt, return false
+        """
+
+        # Validate plant content first
+        validation_response = model.generate_content([validation_prompt, image])
+
+        try:
+            validation_text = validation_response.text.strip()
+            # Extract JSON from validation response
+            json_start = validation_text.find('{')
+            json_end = validation_text.rfind('}') + 1
+
+            if json_start != -1 and json_end != -1:
+                validation_json = json.loads(validation_text[json_start:json_end])
+
+                # Check if it's a plant image
+                if not validation_json.get('is_plant', False) or validation_json.get('confidence', 0) < 70:
+                    return {
+                        'success': False,
+                        'error': 'Please upload an image that clearly shows plant leaves, stems, or other plant parts. The uploaded image does not appear to contain identifiable plant material.',
+                        'processing_time_ms': int((time.time() - start_time) * 1000),
+                        'model_version': model_version
+                    }
+            else:
+                # If we can't parse validation, be conservative
+                return {
+                    'success': False,
+                    'error': 'Unable to validate if the image contains plant material. Please ensure you upload a clear image of plant leaves or other plant parts.',
+                    'processing_time_ms': int((time.time() - start_time) * 1000),
+                    'model_version': model_version
+                }
+
+        except (json.JSONDecodeError, KeyError):
+            # If validation fails, be conservative
+            return {
+                'success': False,
+                'error': 'Unable to validate if the image contains plant material. Please ensure you upload a clear image of plant leaves or other plant parts.',
+                'processing_time_ms': int((time.time() - start_time) * 1000),
+                'model_version': model_version
+            }
+
+        # Now proceed with disease analysis since we confirmed it's a plant
+        analysis_prompt = """
+        You are an expert plant pathologist and agricultural specialist. This image has been confirmed to contain plant material.
+        Analyze this plant image for any diseases, pests, or health issues.
+
+        CRITICAL INSTRUCTIONS:
+        1. ONLY analyze if you can clearly see plant leaves, stems, or plant parts
+        2. If the plant parts are not clearly visible or identifiable, return "uncertain" status
+        3. Be conservative in your diagnosis - only report diseases if you are confident
+        4. Provide specific, actionable advice
+
+        Respond with ONLY a JSON object in this exact format:
+        {
+            "disease_status": "healthy" | "diseased" | "uncertain",
+            "confidence_score": 0-100,
+            "confidence_level": "high" | "medium" | "low",
+            "diseases_detected": [
+                {
+                    "name": "Disease Name",
+                    "confidence": 0-100,
+                    "severity": "mild" | "moderate" | "severe",
+                    "description": "Brief description of the disease"
+                }
+            ],
+            "analysis": "Detailed analysis of the plant's health condition",
+            "remedies": "Recommended treatments and remedies",
+            "prevention": "Prevention tips for future care"
+        }
+
+        STRICT GUIDELINES:
+        - confidence_level: "high" if confidence_score >80%, "medium" if 50-80%, "low" if <50%
+        - disease_status: "healthy" if no issues detected, "diseased" if problems found, "uncertain" if unclear
+        - Only include diseases you can identify with reasonable confidence
+        - Provide specific, actionable remedies and prevention tips
+        - Include both organic and chemical treatment options when applicable
+        - If you cannot clearly see plant details, return "uncertain" status with low confidence
+        """
+
+        # Generate disease analysis
+        response = model.generate_content([analysis_prompt, image])
+        processing_time = int((time.time() - start_time) * 1000)
+
+        # Parse the response
+        try:
+            response_text = response.text.strip()
+
+            # Find JSON in the response
+            json_start = response_text.find('{')
+            json_end = response_text.rfind('}') + 1
+
+            if json_start != -1 and json_end != -1:
+                json_text = response_text[json_start:json_end]
+                parsed_response = json.loads(json_text)
+
+                # Validate required fields
+                required_fields = ['disease_status', 'confidence_score', 'confidence_level', 'analysis']
+                for field in required_fields:
+                    if field not in parsed_response:
+                        raise KeyError(f"Missing required field: {field}")
+
+            else:
+                raise json.JSONDecodeError("No valid JSON found in response", response_text, 0)
+
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to parse AI response: {str(e)}")
+            # Fallback response with conservative analysis
+            parsed_response = {
+                "disease_status": "uncertain",
+                "confidence_score": 30,
+                "confidence_level": "low",
+                "diseases_detected": [],
+                "analysis": f"AI analysis completed but response format was unclear. Raw response: {response_text[:500]}...",
+                "remedies": "Please consult with a local agricultural expert for specific recommendations.",
+                "prevention": "Maintain proper plant care practices including adequate watering, nutrition, and pest monitoring."
+            }
+
+        return {
+            'success': True,
+            'data': parsed_response,
+            'processing_time_ms': processing_time,
+            'model_version': model_version
+        }
+
+    except Exception as e:
+        logger.error(f"Gemini AI analysis failed: {str(e)}")
+        return {
+            'success': False,
+            'error': f"AI analysis failed: {str(e)}",
+            'processing_time_ms': int((time.time() - start_time) * 1000) if 'start_time' in locals() else None,
+            'model_version': model_version
+        }
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def analyze_plant_disease(request):
+    """
+    Analyze plant image for disease detection using Gemini AI
+    """
+    if request.user.user_type not in ['farm_user', 'admin'] and not request.user.is_superuser:
+        return Response({'error': 'Only farm users and admins can analyze plant diseases'}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = CreatePlantDiseasePredictionSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Get the farm and verify user access
+    farm_id = serializer.validated_data['farm'].id
+    farm = Farm.objects.get(id=farm_id)
+
+    # Check if user has access to this farm
+    if request.user.user_type == 'farm_user' and request.user not in farm.users.all():
+        return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        # Extract image metadata before analysis
+        image_data = serializer.validated_data['image_data']
+        image_metadata = extract_image_metadata(image_data)
+
+        # Analyze image with Gemini AI
+        ai_result = analyze_plant_image_with_gemini(
+            image_data,
+            model_version='gemini-2.5-pro'
+        )
+
+        if not ai_result['success']:
+            return Response({
+                'error': 'Failed to analyze image with AI',
+                'details': ai_result.get('error', 'Unknown error')
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        ai_data = ai_result['data']
+
+        # Create prediction record with image metadata
+        prediction = PlantDiseasePrediction.objects.create(
+            farm=farm,
+            user=request.user,
+            crop_stage=serializer.validated_data.get('crop_stage'),
+            image_data=image_data,
+            image_filename=serializer.validated_data.get('image_filename', ''),
+            image_size_bytes=image_metadata.get('size_bytes'),
+            image_width=image_metadata.get('width'),
+            image_height=image_metadata.get('height'),
+            image_format=image_metadata.get('format'),
+            disease_status=ai_data.get('disease_status', 'uncertain'),
+            diseases_detected=ai_data.get('diseases_detected', []),
+            confidence_level=ai_data.get('confidence_level', 'medium'),
+            confidence_score=ai_data.get('confidence_score'),
+            ai_analysis=ai_data.get('analysis', ''),
+            remedies_suggested=ai_data.get('remedies', ''),
+            prevention_tips=ai_data.get('prevention', ''),
+            gemini_model_version=ai_result['model_version'],
+            processing_time_ms=ai_result['processing_time_ms'],
+            user_notes=serializer.validated_data.get('user_notes', ''),
+            location_in_farm=serializer.validated_data.get('location_in_farm', '')
+        )
+
+        # Create notification for farm-wide visibility
+        if prediction.disease_status == 'diseased':
+            disease_names = [d.get('name', 'Unknown') for d in prediction.diseases_detected]
+            title = f"Plant Disease Detected: {', '.join(disease_names[:2])}"
+            message = f"Disease detected in {farm.name}. Location: {prediction.location_in_farm or 'Not specified'}. Confidence: {prediction.confidence_level}"
+
+            Notification.objects.create(
+                title=title,
+                message=message,
+                notification_type='general',
+                farm=farm,
+                user=None,  # Farm-wide notification
+                is_farm_wide=True,
+                priority='high' if prediction.confidence_level == 'high' else 'medium',
+                related_object_id=prediction.id
+            )
+
+        return Response(PlantDiseasePredictionSerializer(prediction).data, status=status.HTTP_201_CREATED)
+
+    except Exception as e:
+        logger.error(f"Error creating plant disease prediction: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_plant_disease_predictions(request):
+    """
+    Get plant disease predictions for user's farms
+    """
+    if request.user.user_type not in ['farm_user', 'admin'] and not request.user.is_superuser:
+        return Response({'error': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+
+    farm_id = request.GET.get('farm_id')
+    if not farm_id:
+        return Response({'error': 'farm_id parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        farm = Farm.objects.get(id=farm_id)
+
+        # Check user access to farm
+        if request.user.user_type == 'farm_user' and request.user not in farm.users.all():
+            return Response({'error': 'You do not have access to this farm'}, status=status.HTTP_403_FORBIDDEN)
+
+        predictions = PlantDiseasePrediction.objects.filter(farm=farm).select_related(
+            'farm', 'user', 'crop_stage'
+        )
+
+        # Apply filters
+        status_filter = request.GET.get('status')
+        if status_filter:
+            predictions = predictions.filter(disease_status=status_filter)
+
+        confidence_filter = request.GET.get('confidence')
+        if confidence_filter:
+            predictions = predictions.filter(confidence_level=confidence_filter)
+
+        resolved_filter = request.GET.get('resolved')
+        if resolved_filter is not None:
+            predictions = predictions.filter(is_resolved=resolved_filter.lower() == 'true')
+
+        # Pagination
+        page_size = min(int(request.GET.get('page_size', 20)), 100)
+        page = int(request.GET.get('page', 1))
+        start = (page - 1) * page_size
+        end = start + page_size
+
+        total_count = predictions.count()
+        predictions = predictions[start:end]
+
+        serializer = PlantDiseasePredictionListSerializer(predictions, many=True)
+
+        return Response({
+            'results': serializer.data,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size
+        })
+
+    except Farm.DoesNotExist:
+        return Response({'error': 'Farm not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error fetching predictions: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_plant_disease_prediction_detail(request, prediction_id):
+    """
+    Get detailed plant disease prediction
+    """
+    try:
+        prediction = PlantDiseasePrediction.objects.select_related(
+            'farm', 'user', 'crop_stage'
+        ).get(id=prediction_id)
+
+        # Check user access
+        if request.user.user_type == 'farm_user' and request.user not in prediction.farm.users.all():
+            return Response({'error': 'You do not have access to this prediction'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = PlantDiseasePredictionSerializer(prediction)
+        return Response(serializer.data)
+
+    except PlantDiseasePrediction.DoesNotExist:
+        return Response({'error': 'Prediction not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error fetching prediction detail: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_plant_disease_prediction(request, prediction_id):
+    """
+    Update plant disease prediction (user notes, resolution status, actions taken)
+    """
+    try:
+        prediction = PlantDiseasePrediction.objects.get(id=prediction_id)
+
+        # Check user access
+        if request.user.user_type == 'farm_user' and request.user not in prediction.farm.users.all():
+            return Response({'error': 'You do not have access to this prediction'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UpdatePlantDiseasePredictionSerializer(prediction, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+
+            # If marked as resolved, create notification
+            if serializer.validated_data.get('is_resolved') and not prediction.is_resolved:
+                Notification.objects.create(
+                    title="Plant Disease Issue Resolved",
+                    message=f"Disease issue in {prediction.farm.name} has been marked as resolved by {request.user.username}",
+                    notification_type='general',
+                    farm=prediction.farm,
+                    user=None,
+                    is_farm_wide=True,
+                    priority='low',
+                    related_object_id=prediction.id
+                )
+
+            return Response(PlantDiseasePredictionSerializer(prediction).data)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except PlantDiseasePrediction.DoesNotExist:
+        return Response({'error': 'Prediction not found'}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        logger.error(f"Error updating prediction: {str(e)}")
+        return Response({'error': 'Internal server error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

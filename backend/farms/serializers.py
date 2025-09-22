@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale, PlantDiseasePrediction
 from accounts.serializers import UserSerializer
 
 class FarmSerializer(serializers.ModelSerializer):
@@ -678,5 +678,77 @@ class UpdateSaleSerializer(serializers.ModelSerializer):
         if value < 0:
             raise serializers.ValidationError("Amount received cannot be negative")
         return value
+
+class PlantDiseasePredictionSerializer(serializers.ModelSerializer):
+    farm_name = serializers.CharField(source='farm.name', read_only=True)
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    crop_stage_name = serializers.CharField(source='crop_stage.crop_name', read_only=True)
+    primary_disease = serializers.ReadOnlyField()
+    disease_count = serializers.ReadOnlyField()
+    severity_level = serializers.ReadOnlyField()
+
+    class Meta:
+        model = PlantDiseasePrediction
+        fields = ('id', 'farm', 'farm_name', 'user', 'user_name', 'user_full_name',
+                 'crop_stage', 'crop_stage_name', 'image_data', 'image_filename',
+                 'image_size_bytes', 'image_width', 'image_height', 'image_format',
+                 'disease_status', 'diseases_detected', 'confidence_level', 'confidence_score',
+                 'ai_analysis', 'remedies_suggested', 'prevention_tips',
+                 'analysis_timestamp', 'gemini_model_version', 'processing_time_ms',
+                 'user_notes', 'location_in_farm', 'is_resolved', 'actions_taken',
+                 'primary_disease', 'disease_count', 'severity_level',
+                 'created_at', 'updated_at')
+        read_only_fields = ('id', 'analysis_timestamp', 'processing_time_ms',
+                           'primary_disease', 'disease_count', 'severity_level',
+                           'created_at', 'updated_at')
+
+    def get_user_full_name(self, obj):
+        if obj.user:
+            full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return full_name if full_name else obj.user.username
+        return ''
+
+class CreatePlantDiseasePredictionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlantDiseasePrediction
+        fields = ('farm', 'crop_stage', 'image_data', 'image_filename',
+                 'location_in_farm', 'user_notes')
+
+    def validate_image_data(self, value):
+        if not value:
+            raise serializers.ValidationError("Image data is required")
+
+        # Basic validation for base64 image data
+        if not value.startswith('data:image/'):
+            raise serializers.ValidationError("Invalid image data format")
+
+        return value
+
+class UpdatePlantDiseasePredictionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlantDiseasePrediction
+        fields = ('user_notes', 'location_in_farm', 'is_resolved', 'actions_taken')
+
+class PlantDiseasePredictionListSerializer(serializers.ModelSerializer):
+    """Optimized serializer for listing multiple predictions"""
+    farm_name = serializers.CharField(source='farm.name', read_only=True)
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    crop_stage_name = serializers.CharField(source='crop_stage.crop_name', read_only=True)
+    primary_disease_name = serializers.SerializerMethodField()
+    disease_count = serializers.ReadOnlyField()
+    severity_level = serializers.ReadOnlyField()
+
+    class Meta:
+        model = PlantDiseasePrediction
+        fields = ('id', 'farm_name', 'user_name', 'crop_stage_name', 'image_filename',
+                 'image_format', 'image_width', 'image_height', 'image_size_bytes',
+                 'disease_status', 'confidence_level', 'confidence_score',
+                 'primary_disease_name', 'disease_count', 'severity_level',
+                 'location_in_farm', 'is_resolved', 'analysis_timestamp')
+
+    def get_primary_disease_name(self, obj):
+        primary = obj.primary_disease
+        return primary.get('name', 'None') if primary else 'None'
 
 

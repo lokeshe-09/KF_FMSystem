@@ -9,7 +9,7 @@ const getApiBaseUrl = () => {
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return `${protocol}//127.0.0.1:8000/api`;
   }
-  
+
   // For production or other hosts
   return `${protocol}//${hostname}:8000/api`;
 };
@@ -86,6 +86,7 @@ export const farmAPI = {
   // Farm-specific Daily Tasks
   getFarmDailyTasks: (farmId, params) => api.get(`/farms/${farmId}/daily-tasks/`, { params }),
   submitFarmDailyTask: (farmId, taskData) => api.post(`/farms/${farmId}/daily-tasks/`, taskData),
+  updateFarmDailyTask: (farmId, taskId, taskData) => api.put(`/farms/${farmId}/daily-tasks/${taskId}/`, taskData),
   
   // Farm-specific Notifications (complete database isolation)
   getFarmNotifications: (farmId, params) => api.get(`/farms/${farmId}/notifications/`, { params }),
@@ -95,10 +96,6 @@ export const farmAPI = {
   // Admin Notification Management
   getAdminNotifications: () => api.get('/farms/admin/notifications/'),
   sendAdminNotification: (notificationData) => api.post('/farms/admin/notifications/', notificationData),
-  
-  // Farm-specific Sales (database isolated per farm)
-  getFarmSales: (farmId, params) => api.get(`/farms/${farmId}/sales/`, { params }),
-  createFarmSale: (farmId, saleData) => api.post(`/farms/${farmId}/sales/`, saleData),
   
   // Farm-specific Crop Stages
   getFarmCropStages: (farmId, params) => api.get(`/farms/${farmId}/crop-stages/`, { params }),
@@ -165,6 +162,7 @@ export const farmAPI = {
   // Legacy APIs (for admin/superuser backward compatibility)
   getDailyTasks: (params) => api.get('/farms/daily-tasks/', { params }),
   submitDailyTask: (taskData) => api.post('/farms/daily-tasks/', taskData),
+  updateDailyTask: (taskId, taskData) => api.put(`/farms/daily-tasks/${taskId}/`, taskData),
   getNotifications: (params) => api.get('/farms/notifications/', { params }),
   markNotificationsAsRead: (data) => api.put('/farms/notifications/', data),
   deleteNotifications: (data) => api.delete('/farms/notifications/', { data }),
@@ -238,6 +236,12 @@ export const farmAPI = {
   updateSale: (id, data) => api.put(`/farms/sales/${id}/`, data),
   deleteSale: (id) => api.delete(`/farms/sales/${id}/`),
   getSaleAnalytics: (params) => api.get('/farms/sales/analytics/', { params }),
+
+  // Calendar sharing APIs
+  shareCalendar: (shareData) => api.post('/farms/calendar/share/', shareData),
+  revokeCalendarShare: (shareId) => api.delete(`/farms/calendar/shares/${shareId}/`),
+  getSharedCalendars: (farmId) => api.get(`/farms/${farmId}/calendar/shares/`),
+  getFarmUsers: (farmId) => api.get(`/farms/${farmId}/users/`),
 };
 
 export default api;

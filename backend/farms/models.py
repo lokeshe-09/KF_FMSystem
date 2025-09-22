@@ -747,6 +747,101 @@ class Sale(models.Model):
                 self.total_amount = 0
         super().save(*args, **kwargs)
 
+class PlantDiseasePrediction(models.Model):
+    DISEASE_STATUS_CHOICES = (
+        ('healthy', 'Healthy'),
+        ('diseased', 'Diseased'),
+        ('uncertain', 'Uncertain'),
+    )
+
+    CONFIDENCE_LEVEL_CHOICES = (
+        ('high', 'High (>80%)'),
+        ('medium', 'Medium (50-80%)'),
+        ('low', 'Low (<50%)'),
+    )
+
+    # Basic Information
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='disease_predictions')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='disease_predictions')
+    crop_stage = models.ForeignKey(CropStage, on_delete=models.SET_NULL, null=True, blank=True, related_name='disease_predictions')
+
+    # Image Data
+    image_data = models.TextField(help_text="Base64 encoded plant image")
+    image_filename = models.CharField(max_length=255, blank=True, null=True, help_text="Original filename")
+    image_size_bytes = models.PositiveIntegerField(null=True, blank=True, help_text="Image size in bytes")
+    image_width = models.PositiveIntegerField(null=True, blank=True, help_text="Image width in pixels")
+    image_height = models.PositiveIntegerField(null=True, blank=True, help_text="Image height in pixels")
+    image_format = models.CharField(max_length=10, blank=True, null=True, help_text="Image format (jpeg, png, etc.)")
+
+    # AI Analysis Results
+    disease_status = models.CharField(max_length=20, choices=DISEASE_STATUS_CHOICES, help_text="Overall health status")
+    diseases_detected = models.JSONField(default=list, help_text="List of diseases detected with details")
+    confidence_level = models.CharField(max_length=10, choices=CONFIDENCE_LEVEL_CHOICES, help_text="AI confidence level")
+    confidence_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True, help_text="Numerical confidence score (0-100)")
+
+    # AI Response
+    ai_analysis = models.TextField(help_text="Complete AI analysis response")
+    remedies_suggested = models.TextField(blank=True, null=True, help_text="Recommended treatments and remedies")
+    prevention_tips = models.TextField(blank=True, null=True, help_text="Prevention tips for future")
+
+    # Additional Metadata
+    analysis_timestamp = models.DateTimeField(auto_now_add=True, help_text="When AI analysis was performed")
+    gemini_model_version = models.CharField(max_length=50, default='gemini-2.5-pro', help_text="Gemini AI model used")
+    processing_time_ms = models.PositiveIntegerField(null=True, blank=True, help_text="Time taken for AI processing")
+
+    # User Notes
+    user_notes = models.TextField(blank=True, null=True, help_text="User's additional notes")
+    location_in_farm = models.CharField(max_length=200, blank=True, null=True, help_text="Specific location where image was taken")
+
+    # Status and Actions
+    is_resolved = models.BooleanField(default=False, help_text="Whether the issue has been resolved")
+    actions_taken = models.TextField(blank=True, null=True, help_text="Actions taken based on the prediction")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-analysis_timestamp', '-created_at']
+        indexes = [
+            models.Index(fields=['farm', '-analysis_timestamp']),
+            models.Index(fields=['user', '-analysis_timestamp']),
+            models.Index(fields=['disease_status']),
+            models.Index(fields=['confidence_level']),
+            models.Index(fields=['is_resolved']),
+            models.Index(fields=['-created_at']),
+        ]
+
+    def __str__(self):
+        status_display = f"{self.get_disease_status_display()}"
+        if self.diseases_detected:
+            disease_names = [d.get('name', 'Unknown') for d in self.diseases_detected]
+            status_display += f" - {', '.join(disease_names[:2])}"
+        return f"{self.farm.name} - {status_display} - {self.analysis_timestamp.strftime('%Y-%m-%d %H:%M')}"
+
+    @property
+    def primary_disease(self):
+        """Get the primary/most confident disease detected"""
+        if not self.diseases_detected:
+            return None
+        return max(self.diseases_detected, key=lambda x: x.get('confidence', 0))
+
+    @property
+    def disease_count(self):
+        """Count of diseases detected"""
+        return len(self.diseases_detected) if self.diseases_detected else 0
+
+    @property
+    def severity_level(self):
+        """Determine severity based on confidence and disease count"""
+        if self.disease_status == 'healthy':
+            return 'low'
+        elif self.confidence_level == 'high' and self.disease_count > 1:
+            return 'high'
+        elif self.confidence_level in ['medium', 'high']:
+            return 'medium'
+        else:
+            return 'low'
+
 @receiver(post_delete, sender=Farm)
 def delete_farm_users(sender, instance, **kwargs):
     for user in instance.users.all():

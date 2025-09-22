@@ -19,6 +19,7 @@ urlpatterns = [
     # Farm-specific URLs (for farm users working within a specific farm context)
     path('<int:farm_id>/dashboard/', views.farm_specific_dashboard, name='farm_specific_dashboard'),
     path('<int:farm_id>/daily-tasks/', views.farm_daily_tasks, name='farm_daily_tasks'),
+    path('<int:farm_id>/daily-tasks/<int:task_id>/', views.farm_daily_task_detail, name='farm_daily_task_detail'),
     path('<int:farm_id>/crop-stages/', views.farm_crop_stages, name='farm_crop_stages'),
     path('<int:farm_id>/crop-stages/<int:stage_id>/', views.farm_crop_stage_detail, name='farm_crop_stage_detail'),
     path('<int:farm_id>/notifications/', views.farm_notifications, name='farm_notifications'),
@@ -42,6 +43,7 @@ urlpatterns = [
     
     # Legacy URLs (for admin/superuser backward compatibility)
     path('daily-tasks/', views.daily_tasks, name='daily_tasks'),
+    path('daily-tasks/<int:task_id>/', views.daily_task_detail, name='daily_task_detail'),
     path('notifications/', views.notifications, name='notifications'),
     path('spray-irrigation-logs/', views.spray_irrigation_logs, name='spray_irrigation_logs'),
     path('crop-stages/', views.crop_stages, name='crop_stages'),
@@ -68,4 +70,10 @@ urlpatterns = [
     path('sales/', views.sales, name='sales'),
     path('sales/<int:sale_id>/', views.sale_detail, name='sale_detail'),
     path('sales/analytics/', views.sale_analytics, name='sale_analytics'),
+
+    # Plant Disease Prediction URLs
+    path('plant-disease/analyze/', views.analyze_plant_disease, name='analyze_plant_disease'),
+    path('plant-disease/predictions/', views.get_plant_disease_predictions, name='get_plant_disease_predictions'),
+    path('plant-disease/predictions/<int:prediction_id>/', views.get_plant_disease_prediction_detail, name='get_plant_disease_prediction_detail'),
+    path('plant-disease/predictions/<int:prediction_id>/update/', views.update_plant_disease_prediction, name='update_plant_disease_prediction'),
 ]

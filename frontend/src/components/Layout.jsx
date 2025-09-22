@@ -87,6 +87,12 @@ const SaleStageIcon = ({ className }) => (
   </svg>
 );
 
+const PlantDiseaseIcon = ({ className }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
 const Layout = ({ children }) => {
   const { user, logout, isAdmin, isSuperuser, isFarmUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -101,6 +107,8 @@ const Layout = ({ children }) => {
     { name: 'Farm Dashboard', href: `/farm/${farmId}/dashboard`, icon: DashboardIcon, show: true },
     { name: 'Daily Tasks', href: `/farm/${farmId}/daily-tasks`, icon: TasksIcon, show: true },
     { name: 'Crop Stages', href: `/farm/${farmId}/crop-stages`, icon: CropStageIcon, show: true },
+    { name: 'Plant Disease Prediction', href: `/farm/${farmId}/plant-disease`, icon: PlantDiseaseIcon, show: true },
+    { name: 'Smart Calendar', href: `/farm/${farmId}/calendar`, icon: CalendarIcon, show: true },
     { name: 'Spray Schedule', href: `/farm/${farmId}/spray-schedules`, icon: SprayIcon, show: true },
     { name: 'Fertigation', href: `/farm/${farmId}/fertigations`, icon: FertigationIcon, show: true },
     { name: 'Worker Tasks', href: `/farm/${farmId}/worker-tasks`, icon: WorkerTaskIcon, show: true },
@@ -114,6 +122,7 @@ const Layout = ({ children }) => {
   const farmUserNavigation = [
     { name: 'Farm Dashboard', href: '/farm-user-dashboard', icon: DashboardIcon, show: true },
     { name: 'My Farms', href: '/my-farms', icon: FarmIcon, show: true },
+    { name: 'Smart Calendar', href: '/calendar', icon: CalendarIcon, show: true },
     { name: 'My Notifications', href: '/farm-notifications', icon: NotificationIcon, show: true },
     { name: 'Profile', href: '/profile', icon: ProfileIcon, show: true },
   ];
@@ -123,7 +132,7 @@ const Layout = ({ children }) => {
     { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon, show: true },
     { name: 'Daily Tasks', href: '/daily-tasks', icon: TasksIcon, show: !isAdmin && !isSuperuser },
     { name: 'Crop Stage', href: '/crop-stage', icon: CropStageIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Calendar', href: '/calendar', icon: CalendarIcon, show: !isAdmin && !isSuperuser },
+    { name: 'Smart Calendar', href: '/calendar', icon: CalendarIcon, show: true },
     { name: 'Spray Schedule', href: '/spray-schedule', icon: SprayIcon, show: !isAdmin && !isSuperuser },
     { name: 'Fertigation', href: '/fertigation', icon: FertigationIcon, show: !isAdmin && !isSuperuser },
     { name: 'Worker Tasks', href: '/worker-tasks', icon: WorkerTaskIcon, show: !isAdmin && !isSuperuser },

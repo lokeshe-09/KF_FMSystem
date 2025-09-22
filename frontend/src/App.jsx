@@ -23,6 +23,8 @@ import WorkerTaskManagement from './pages/WorkerTaskManagement';
 import IssueReports from './pages/IssueReports';
 import ExpenditureManagement from './pages/ExpenditureManagement';
 import SaleStage from './pages/SaleStage';
+import PlantDiseasePrediction from './pages/PlantDiseasePrediction';
+import PlantDiseasePredictionDetail from './pages/PlantDiseasePredictionDetail';
 
 // NEW: Farm-centric pages
 import MyFarms from './pages/MyFarms';
@@ -110,22 +112,31 @@ function App() {
               } 
             />
             
-            <Route 
-              path="/farm/:farmId/crop-stages" 
+            <Route
+              path="/farm/:farmId/crop-stages"
               element={
                 <ProtectedRoute farmUserOnly>
                   <CropStage />
                 </ProtectedRoute>
-              } 
+              }
             />
-            
-            <Route 
-              path="/farm/:farmId/spray-schedules" 
+
+            <Route
+              path="/farm/:farmId/calendar"
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <Calendar />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/farm/:farmId/spray-schedules"
               element={
                 <ProtectedRoute farmUserOnly>
                   <SpraySchedule />
                 </ProtectedRoute>
-              } 
+              }
             />
             
             <Route 
@@ -182,13 +193,31 @@ function App() {
               } 
             />
             
-            <Route 
-              path="/farm/:farmId/notifications" 
+            <Route
+              path="/farm/:farmId/notifications"
               element={
                 <ProtectedRoute farmUserOnly>
                   <FarmSpecificNotifications />
                 </ProtectedRoute>
-              } 
+              }
+            />
+
+            <Route
+              path="/farm/:farmId/plant-disease"
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <PlantDiseasePrediction />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/farm/:farmId/plant-disease/:predictionId"
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <PlantDiseasePredictionDetail />
+                </ProtectedRoute>
+              }
             />
             
             <Route 

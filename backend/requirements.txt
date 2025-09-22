@@ -8,3 +8,4 @@ channels==4.0.0
 celery==5.3.4
 django-celery-beat==2.5.0
 daphne==4.0.0
+google-genai
