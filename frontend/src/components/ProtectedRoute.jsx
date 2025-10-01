@@ -2,8 +2,8 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const ProtectedRoute = ({ children, adminOnly = false, superuserOnly = false, farmUserOnly = false }) => {
-  const { isAuthenticated, isAdmin, isSuperuser, isFarmUser, loading } = useAuth();
+const ProtectedRoute = ({ children, adminOnly = false, agronomistOnly = false, superuserOnly = false, farmUserOnly = false }) => {
+  const { isAuthenticated, isAgronomist, isSuperuser, isFarmUser, loading } = useAuth();
 
   if (loading) {
     return (
@@ -22,7 +22,7 @@ const ProtectedRoute = ({ children, adminOnly = false, superuserOnly = false, fa
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (adminOnly && !isAdmin && !isSuperuser) {
+  if ((adminOnly || agronomistOnly) && !isAgronomist && !isSuperuser) {
     // Redirect farm users to their dashboard
     if (isFarmUser) {
       return <Navigate to="/farm-user-dashboard" replace />;
@@ -31,7 +31,7 @@ const ProtectedRoute = ({ children, adminOnly = false, superuserOnly = false, fa
   }
 
   if (farmUserOnly && !isFarmUser) {
-    // Redirect admins/superusers to their dashboard
+    // Redirect agronomists/superusers to their dashboard
     return <Navigate to="/dashboard" replace />;
   }
 

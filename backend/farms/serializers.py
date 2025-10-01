@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AdminNotification, Expenditure, Sale, PlantDiseasePrediction
+from .models import Farm, DailyTask, Notification, SprayIrrigationLog, SpraySchedule, CropStage, Fertigation, Worker, WorkerTask, IssueReport, AgronomistNotification, Expenditure, Sale, PlantDiseasePrediction, FarmTask
 from accounts.serializers import UserSerializer
 
 class FarmSerializer(serializers.ModelSerializer):
@@ -53,13 +53,13 @@ class NotificationSerializer(serializers.ModelSerializer):
         return None
 
 
-class AdminNotificationSerializer(serializers.ModelSerializer):
+class AgronomistNotificationSerializer(serializers.ModelSerializer):
     source_user_name = serializers.CharField(source='source_user.username', read_only=True)
     source_farm_name = serializers.CharField(source='source_farm.name', read_only=True)
     source_user_full_name = serializers.SerializerMethodField()
     
     class Meta:
-        model = AdminNotification
+        model = AgronomistNotification
         fields = ('id', 'title', 'message', 'notification_type', 'source_user', 
                  'source_user_name', 'source_user_full_name', 'source_farm', 
                  'source_farm_name', 'related_object_id', 'related_model_name',
@@ -456,13 +456,13 @@ class IssueReportSerializer(serializers.ModelSerializer):
     issue_type_display = serializers.CharField(source='get_issue_type_display', read_only=True)
     severity_display = serializers.CharField(source='get_severity_display', read_only=True)
     status_display = serializers.CharField(source='get_status_display', read_only=True)
-    admin_username = serializers.CharField(source='admin_user.username', read_only=True)
+    agronomist_username = serializers.CharField(source='agronomist_user.username', read_only=True)
     
     class Meta:
         model = IssueReport
         fields = ('id', 'crop_zone', 'issue_type', 'issue_type_display', 'description', 
                  'photo_evidence', 'severity', 'severity_display', 'status', 'status_display',
-                 'resolution_notes', 'admin_username', 'created_at', 'updated_at')
+                 'resolution_notes', 'agronomist_username', 'created_at', 'updated_at')
         read_only_fields = ('id', 'created_at', 'updated_at')
 
 class CreateIssueReportSerializer(serializers.ModelSerializer):
@@ -751,4 +751,48 @@ class PlantDiseasePredictionListSerializer(serializers.ModelSerializer):
         primary = obj.primary_disease
         return primary.get('name', 'None') if primary else 'None'
 
+
+
+
+class FarmTaskSerializer(serializers.ModelSerializer):
+    farm_name = serializers.CharField(source='farm.name', read_only=True)
+    user_name = serializers.CharField(source='user.username', read_only=True)
+    user_full_name = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    priority_display = serializers.CharField(source='get_priority_display', read_only=True)
+    is_overdue = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = FarmTask
+        fields = ('id', 'farm', 'farm_name', 'user', 'user_name', 'user_full_name',
+                 'title', 'description', 'priority', 'priority_display',
+                 'status', 'status_display', 'due_date', 'completed_at', 'notes',
+                 'image_data', 'is_overdue', 'created_at', 'updated_at')
+        read_only_fields = ('id', 'user', 'completed_at', 'created_at', 'updated_at')
+    
+    def get_user_full_name(self, obj):
+        if obj.user:
+            full_name = f"{obj.user.first_name} {obj.user.last_name}".strip()
+            return full_name if full_name else obj.user.username
+        return ''
+    
+    def get_is_overdue(self, obj):
+        if obj.due_date and obj.status != 'completed':
+            from datetime import date
+            return obj.due_date < date.today()
+        return False
+
+class CreateFarmTaskSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FarmTask
+        exclude = ('user', 'completed_at', 'created_at', 'updated_at')
+    
+    def validate(self, data):
+        # Ensure the due_date is not in the past (optional validation)
+        if 'due_date' in data and data['due_date']:
+            from datetime import date
+            if data['due_date'] < date.today():
+                # Allow past dates, just log a warning
+                pass
+        return data
 

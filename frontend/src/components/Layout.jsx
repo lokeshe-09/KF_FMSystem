@@ -94,7 +94,7 @@ const PlantDiseaseIcon = ({ className }) => (
 );
 
 const Layout = ({ children }) => {
-  const { user, logout, isAdmin, isSuperuser, isFarmUser } = useAuth();
+  const { user, logout, isAgronomist, isSuperuser, isFarmUser } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const { farmId } = useParams();
@@ -107,10 +107,11 @@ const Layout = ({ children }) => {
     { name: 'Farm Dashboard', href: `/farm/${farmId}/dashboard`, icon: DashboardIcon, show: true },
     { name: 'Daily Tasks', href: `/farm/${farmId}/daily-tasks`, icon: TasksIcon, show: true },
     { name: 'Crop Stages', href: `/farm/${farmId}/crop-stages`, icon: CropStageIcon, show: true },
-    { name: 'Plant Disease Prediction', href: `/farm/${farmId}/plant-disease`, icon: PlantDiseaseIcon, show: true },
+    { name: 'Plant Disease & Pest Analysis', href: `/farm/${farmId}/plant-disease`, icon: PlantDiseaseIcon, show: true },
     { name: 'Smart Calendar', href: `/farm/${farmId}/calendar`, icon: CalendarIcon, show: true },
     { name: 'Spray Schedule', href: `/farm/${farmId}/spray-schedules`, icon: SprayIcon, show: true },
     { name: 'Fertigation', href: `/farm/${farmId}/fertigations`, icon: FertigationIcon, show: true },
+    { name: 'Farm Tasks', href: `/farm/${farmId}/farm-tasks`, icon: WorkerTaskIcon, show: true },
     { name: 'Worker Tasks', href: `/farm/${farmId}/worker-tasks`, icon: WorkerTaskIcon, show: true },
     { name: 'Issue Reports', href: `/farm/${farmId}/issue-reports`, icon: IssueReportIcon, show: true },
     { name: 'Expenditures', href: `/farm/${farmId}/expenditures`, icon: ExpenditureIcon, show: true },
@@ -127,27 +128,27 @@ const Layout = ({ children }) => {
     { name: 'Profile', href: '/profile', icon: ProfileIcon, show: true },
   ];
 
-  // Admin/Superuser navigation (legacy)
-  const adminNavigation = [
+  // Agronomist/Superuser navigation (legacy)
+  const agronomistNavigation = [
     { name: 'Dashboard', href: '/dashboard', icon: DashboardIcon, show: true },
-    { name: 'Daily Tasks', href: '/daily-tasks', icon: TasksIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Crop Stage', href: '/crop-stage', icon: CropStageIcon, show: !isAdmin && !isSuperuser },
+    { name: 'Daily Tasks', href: '/daily-tasks', icon: TasksIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Crop Stage', href: '/crop-stage', icon: CropStageIcon, show: !isAgronomist && !isSuperuser },
     { name: 'Smart Calendar', href: '/calendar', icon: CalendarIcon, show: true },
-    { name: 'Spray Schedule', href: '/spray-schedule', icon: SprayIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Fertigation', href: '/fertigation', icon: FertigationIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Worker Tasks', href: '/worker-tasks', icon: WorkerTaskIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Issue Reports', href: '/issue-reports', icon: IssueReportIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Expenditure', href: '/expenditure', icon: ExpenditureIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Sale Stage', href: '/sale-stage', icon: SaleStageIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Notifications', href: '/farm-notifications', icon: NotificationIcon, show: !isAdmin && !isSuperuser },
-    { name: 'Admin Notifications', href: '/notifications', icon: NotificationIcon, show: isAdmin && !isSuperuser },
-    { name: 'Send Notifications', href: '/admin/notification-manager', icon: NotificationIcon, show: isAdmin && !isSuperuser },
+    { name: 'Spray Schedule', href: '/spray-schedule', icon: SprayIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Fertigation', href: '/fertigation', icon: FertigationIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Worker Tasks', href: '/worker-tasks', icon: WorkerTaskIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Issue Reports', href: '/issue-reports', icon: IssueReportIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Expenditure', href: '/expenditure', icon: ExpenditureIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Sale Stage', href: '/sale-stage', icon: SaleStageIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Notifications', href: '/farm-notifications', icon: NotificationIcon, show: !isAgronomist && !isSuperuser },
+    { name: 'Agronomist Notifications', href: '/notifications', icon: NotificationIcon, show: isAgronomist && !isSuperuser },
+    { name: 'Send Notifications', href: '/agronomist/notification-manager', icon: NotificationIcon, show: isAgronomist && !isSuperuser },
     { name: 'User Management', href: '/user-management', icon: UserIcon, show: isSuperuser },
-    { name: 'Farm User Management', href: '/farm-user-management', icon: UserIcon, show: isAdmin && !isSuperuser },
-    { name: 'Create Farm', href: '/create-farm', icon: FarmIcon, show: isAdmin && !isSuperuser },
-    { name: 'Create Farm User', href: '/create-user', icon: UserIcon, show: isAdmin && !isSuperuser },
-    { name: 'All Farms', href: '/farms', icon: FarmIcon, show: isAdmin || isSuperuser },
-    { name: 'My Farms', href: '/farms', icon: FarmIcon, show: !isAdmin && !isSuperuser },
+    { name: 'Farm User Management', href: '/farm-user-management', icon: UserIcon, show: isAgronomist && !isSuperuser },
+    { name: 'Create Farm', href: '/create-farm', icon: FarmIcon, show: isAgronomist && !isSuperuser },
+    { name: 'Create Farm User', href: '/create-user', icon: UserIcon, show: isAgronomist && !isSuperuser },
+    { name: 'All Farms', href: '/farms', icon: FarmIcon, show: isAgronomist || isSuperuser },
+    { name: 'My Farms', href: '/farms', icon: FarmIcon, show: !isAgronomist && !isSuperuser },
   ].filter(item => item.show);
 
   // Determine which navigation to use
@@ -156,8 +157,8 @@ const Layout = ({ children }) => {
     // Farm users get farm-specific navigation when in farm mode, otherwise general farm user navigation
     navigation = inFarmMode ? farmNavigation : farmUserNavigation;
   } else {
-    // Admins and superusers always get admin navigation
-    navigation = adminNavigation;
+    // Agronomists and superusers always get agronomist navigation
+    navigation = agronomistNavigation;
   }
 
   return (
@@ -248,7 +249,7 @@ const Layout = ({ children }) => {
                 <p className="text-sm font-medium text-slate-700 truncate">{user.username}</p>
                 <p className="text-xs text-slate-500 capitalize flex items-center">
                   <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                    isSuperuser ? 'bg-purple-400' : user.user_type === 'admin' ? 'bg-emerald-400' : 'bg-blue-400'
+                    isSuperuser ? 'bg-purple-400' : user.user_type === 'agronomist' ? 'bg-emerald-400' : 'bg-blue-400'
                   }`}></span>
                   {isSuperuser ? 'Superuser' : user.user_type}
                 </p>
@@ -442,7 +443,7 @@ const Layout = ({ children }) => {
                   <p className="text-sm sm:text-base font-medium text-slate-700 truncate">{user.username}</p>
                   <p className="text-xs sm:text-sm text-slate-500 capitalize flex items-center">
                     <span className={`inline-block w-2 h-2 rounded-full mr-2 ${
-                      isSuperuser ? 'bg-purple-400' : user.user_type === 'admin' ? 'bg-emerald-400' : 'bg-blue-400'
+                      isSuperuser ? 'bg-purple-400' : user.user_type === 'agronomist' ? 'bg-emerald-400' : 'bg-blue-400'
                     }`}></span>
                     {isSuperuser ? 'Superuser' : user.user_type}
                   </p>

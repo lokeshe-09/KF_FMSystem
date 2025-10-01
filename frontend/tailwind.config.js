@@ -3,6 +3,7 @@ module.exports = {
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
   ],
+  darkMode: false, // Explicitly disable dark mode
   theme: {
     extend: {
       screens: {

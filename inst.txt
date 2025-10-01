@@ -1,0 +1,35 @@
+You are an expert frontend UI/UX designer and React developer.  
+I have a Farm Management Dashboard built with React (JSX) + Django backend.  
+Currently, the UI feels basic, has text alignment issues, and some text is getting cut off (like "CROP STAGES" and "WORKER TASKS").  
+I want you to improve only the frontend (React JSX + Tailwind CSS or CSS modules).  
+
+🔹 Fix all issues and enhance the UI with these goals:  
+
+1. **Text & Alignment**  
+   - Ensure no text gets clipped or cut off.  
+   - Properly align numbers, labels, and headings with consistent padding and margins.  
+   - Make all text fully visible, balanced, and responsive.  
+
+2. **Visual Design**  
+   - Redesign cards (Tasks, Crop Stages, Worker Tasks, etc.) with a smoother, modern style.  
+   - Use soft shadows, rounded corners (2xl), clean typography, and consistent spacing.  
+   - Add subtle gradients or contrast to highlight key sections.  
+   - Ensure color theme looks sharp, classy, and professional in a light theme.  
+
+3. **Interactivity & Smoothness**  
+   - Add hover states, active states, and smooth transitions.  
+   - Make buttons and quick action cards feel clickable with animations.  
+   - Ensure navigation feels seamless.  
+
+4. **Responsiveness**  
+   - Make sure the layout works well on desktop, tablet, and mobile without overflow or clipping.  
+   - Adjust grids and flex layouts for smaller screens.  
+
+5. **Dashboard Professionalism**  
+   - Present data in a clean and well-structured way.  
+   - Highlight important KPIs (Tasks, Crop Stages, Worker Tasks) with color-coded cards.  
+   - Quick Actions should be visually uniform, evenly spaced, and professional-looking.  
+
+👉 Output:  
+Update my existing React JSX components with these improvements while keeping backend integration untouched.  
+The final UI should look **modern, smooth, attractive, and error-free** without any text alignment or cutting issues.  

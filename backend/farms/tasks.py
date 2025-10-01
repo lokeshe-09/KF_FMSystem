@@ -75,9 +75,9 @@ def process_fertigation_notifications(channel_layer, now):
                 )
                 
                 send_websocket_notification(channel_layer, notification)
-                send_admin_notification(channel_layer, notification, fertigation.user)
+                send_agronomist_notification(channel_layer, notification, fertigation.user)
                 notification_count += 1
-                logger.info(f'Sent fertigation due notification to {fertigation.user.username} and admin for {fertigation.crop_zone_name}')
+                logger.info(f'Sent fertigation due notification to {fertigation.user.username} and agronomist for {fertigation.crop_zone_name}')
         
         # 2. Update overdue fertigations
         overdue_fertigations = Fertigation.objects.filter(
@@ -122,9 +122,9 @@ def process_fertigation_notifications(channel_layer, now):
                     )
                 
                 send_websocket_notification(channel_layer, notification)
-                send_admin_notification(channel_layer, notification, fertigation.user)
+                send_agronomist_notification(channel_layer, notification, fertigation.user)
                 notification_count += 1
-                logger.info(f'Updated/sent overdue fertigation notification to {fertigation.user.username} and admin for {fertigation.crop_zone_name}')
+                logger.info(f'Updated/sent overdue fertigation notification to {fertigation.user.username} and agronomist for {fertigation.crop_zone_name}')
     
     except Exception as e:
         logger.error(f"Error processing fertigation notifications: {str(e)}")
@@ -168,9 +168,9 @@ def process_harvest_notifications(channel_layer, now):
                 )
                 
                 send_websocket_notification(channel_layer, notification)
-                send_admin_notification(channel_layer, notification, crop_stage.user)
+                send_agronomist_notification(channel_layer, notification, crop_stage.user)
                 notification_count += 1
-                logger.info(f'Sent harvest due notification to {crop_stage.user.username} and admin for {crop_stage.crop_name}')
+                logger.info(f'Sent harvest due notification to {crop_stage.user.username} and agronomist for {crop_stage.crop_name}')
         
         # Check for overdue harvests
         overdue_harvests = CropStage.objects.filter(
@@ -217,9 +217,9 @@ def process_harvest_notifications(channel_layer, now):
                     )
                 
                 send_websocket_notification(channel_layer, notification)
-                send_admin_notification(channel_layer, notification, crop_stage.user)
+                send_agronomist_notification(channel_layer, notification, crop_stage.user)
                 notification_count += 1
-                logger.info(f'Updated/sent overdue harvest notification to {crop_stage.user.username} and admin for {crop_stage.crop_name}')
+                logger.info(f'Updated/sent overdue harvest notification to {crop_stage.user.username} and agronomist for {crop_stage.crop_name}')
     
     except Exception as e:
         logger.error(f"Error processing harvest notifications: {str(e)}")
@@ -249,11 +249,11 @@ def send_websocket_notification(channel_layer, notification):
         except Exception as e:
             logger.error(f'Failed to send WebSocket notification: {str(e)}')
 
-def send_admin_notification(channel_layer, notification, farm_user):
-    """Send notification to admin via WebSocket"""
+def send_agronomist_notification(channel_layer, notification, farm_user):
+    """Send notification to agronomist via WebSocket"""
     if channel_layer and hasattr(farm_user, 'created_by') and farm_user.created_by:
-        admin_user = farm_user.created_by
-        if admin_user and admin_user.user_type in ['admin', 'superuser']:
+        agronomist_user = farm_user.created_by
+        if agronomist_user and agronomist_user.user_type in ['agronomist', 'superuser']:
             try:
                 notification_data = {
                     "type": "notification_message",
@@ -268,16 +268,16 @@ def send_admin_notification(channel_layer, notification, farm_user):
                     "timestamp": notification.created_at.isoformat()
                 }
                 
-                # Send to specific admin who created this farm user (using consistent naming)
-                specific_admin_group = f'admin_{admin_user.id}_notifications'
-                async_to_sync(channel_layer.group_send)(specific_admin_group, notification_data)
+                # Send to specific agronomist who created this farm user (using consistent naming)
+                specific_agronomist_group = f'agronomist_{agronomist_user.id}_notifications'
+                async_to_sync(channel_layer.group_send)(specific_agronomist_group, notification_data)
                 
-                # Also send to general admin notifications group (fallback)
-                async_to_sync(channel_layer.group_send)("admin_notifications", notification_data)
+                # Also send to general agronomist notifications group (fallback)
+                async_to_sync(channel_layer.group_send)("agronomist_notifications", notification_data)
                 
-                logger.info(f'Sent {notification.notification_type} notification to admin {admin_user.username} (ID: {admin_user.id}) for farm user {farm_user.username}')
+                logger.info(f'Sent {notification.notification_type} notification to agronomist {agronomist_user.username} (ID: {agronomist_user.id}) for farm user {farm_user.username}')
             except Exception as e:
-                logger.error(f'Failed to send admin notification: {str(e)}')
+                logger.error(f'Failed to send agronomist notification: {str(e)}')
 
 @shared_task
 def cleanup_old_notifications():

@@ -38,7 +38,7 @@ class CustomUserAdmin(UserAdmin):
         }),
         ('User Type', {
             'fields': ('user_type',),
-            'description': 'Select "admin" for system administrators who can manage farms and users. Select "farm_user" for regular farm users.'
+            'description': 'Select "agronomist" for agricultural specialists who can manage farms and users. Select "farm_user" for regular farm users.'
         }),
     )
     

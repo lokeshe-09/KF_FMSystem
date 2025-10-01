@@ -43,7 +43,7 @@ const Login = () => {
   if (isAuthenticated) {
     if (user?.user_type === 'farm_user') {
       return <Navigate to="/farm-user-dashboard" replace />;
-    } else if (user?.user_type === 'admin' || user?.is_superuser) {
+    } else if (user?.user_type === 'agronomist' || user?.is_superuser) {
       return <Navigate to="/dashboard" replace />;
     } else {
       return <Navigate to="/dashboard" replace />;
@@ -80,7 +80,7 @@ const Login = () => {
       setTimeout(() => {
         if (userData.user_type === 'farm_user') {
           navigate('/farm-user-dashboard');
-        } else if (userData.user_type === 'admin' || userData.is_superuser) {
+        } else if (userData.user_type === 'agronomist' || userData.is_superuser) {
           navigate('/dashboard');
         } else {
           navigate('/dashboard');
@@ -138,7 +138,7 @@ const Login = () => {
         >
           <img
             src="https://images.unsplash.com/photo-1416879595882-3373a0480b5b?ixlib=rb-4.0.3&auto=format&fit=crop&w=3440&q=90"
-            alt="Hydroponic Farm Intelligence"
+            alt="Farm Background"
             className="w-full h-full object-cover scale-110 filter blur-[2px]"
           />
           {/* Warm Green Color Grade Overlay */}
@@ -170,30 +170,6 @@ const Login = () => {
 
             {/* Left Side - Hero Content (60%) */}
             <div className="lg:col-span-7 text-center lg:text-left order-2 lg:order-1">
-              {/* Brand Header */}
-              <div className="mb-12">
-                <div className="flex items-center justify-center lg:justify-start mb-8">
-                  <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-emerald-500/30">
-                    <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                  </div>
-                </div>
-
-                <h1 className="text-5xl lg:text-7xl font-bold text-white mb-6 leading-tight">
-                  Hydroponic
-                  <span className="block bg-gradient-to-r from-emerald-400 via-green-300 to-emerald-500 bg-clip-text text-transparent">
-                    Farm Intelligence
-                  </span>
-                </h1>
-
-                <div className="w-20 h-1.5 bg-gradient-to-r from-emerald-400 to-green-500 rounded-full mb-8 mx-auto lg:mx-0 shadow-lg shadow-emerald-400/50"></div>
-
-                <p className="text-xl text-slate-300 leading-relaxed font-light max-w-2xl mx-auto lg:mx-0 mb-12">
-                  Revolutionary agtech platform delivering precision monitoring,
-                  AI-driven optimization, and sustainable farming solutions.
-                </p>
-              </div>
 
               {/* Feature Chips */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-12">
@@ -228,21 +204,6 @@ const Login = () => {
                 </div>
               </div>
 
-              {/* Stats Row */}
-              <div className="grid grid-cols-3 gap-8">
-                <div className="text-center">
-                  <div className="text-4xl lg:text-5xl font-bold text-white mb-2">300%</div>
-                  <div className="text-sm text-slate-400 font-medium uppercase tracking-wider">Higher Yields</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-4xl lg:text-5xl font-bold text-white mb-2">97%</div>
-                  <div className="text-sm text-slate-400 font-medium uppercase tracking-wider">Accuracy</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-4xl lg:text-5xl font-bold text-white mb-2">24/7</div>
-                  <div className="text-sm text-slate-400 font-medium uppercase tracking-wider">Support</div>
-                </div>
-              </div>
             </div>
 
             {/* Right Side - Auth Card (36%) */}
@@ -268,7 +229,7 @@ const Login = () => {
                         </svg>
                       </div>
                       <h2 className="text-3xl font-bold text-white mb-2">Welcome back</h2>
-                      <p className="text-slate-300 text-sm font-medium">Sign in to your Hydroponic Farm Intelligence dashboard</p>
+                      <p className="text-slate-300 text-sm font-medium">Sign in to your dashboard</p>
                     </div>
 
                     {/* Main Auth Form */}
@@ -367,7 +328,7 @@ const Login = () => {
                       </div>
 
                       <div className="text-xs text-slate-500">
-                        <p>© 2025 Hydroponic Farm Intelligence. All rights reserved.</p>
+                        <p>© 2025 Farm Management System. All rights reserved.</p>
                       </div>
                     </div>
                   </div>

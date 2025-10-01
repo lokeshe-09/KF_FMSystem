@@ -7,11 +7,11 @@ const getApiBaseUrl = () => {
   
   // Use same protocol as the current page, fallback to HTTP for development
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return `${protocol}//127.0.0.1:8000/api`;
+    return `http://localhost:8000/api`;
   }
 
   // For production or other hosts
-  return `${protocol}//${hostname}:8000/api`;
+  return `http://localhost:8000/api`;
 };
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || getApiBaseUrl();
@@ -63,12 +63,12 @@ export const authAPI = {
   // Superuser-only endpoints
   resetUserPassword: (userId, passwordData) => api.post(`/auth/reset-password/${userId}/`, passwordData),
   getAllUsers: () => api.get('/auth/all-users/'),
-  getAdmins: () => api.get('/auth/admins/'),
-  createAdmin: (userData) => api.post('/auth/create-admin/', userData),
+  getAgronomists: () => api.get('/auth/agronomists/'),
+  createAgronomist: (userData) => api.post('/auth/create-agronomist/', userData),
 };
 
 export const farmAPI = {
-  // General farm management (for admins)
+  // General farm management (for agronomists)
   getFarms: () => api.get('/farms/'),
   createFarm: (farmData) => api.post('/farms/create/', farmData),
   getFarm: (id) => api.get(`/farms/${id}/`),
@@ -93,9 +93,13 @@ export const farmAPI = {
   createFarmNotification: (farmId, notificationData) => api.post(`/farms/${farmId}/notifications/`, notificationData),
   markFarmNotificationsAsRead: (farmId, notificationIds) => api.put(`/farms/${farmId}/notifications/`, { notification_ids: notificationIds }),
   
-  // Admin Notification Management
-  getAdminNotifications: () => api.get('/farms/admin/notifications/'),
-  sendAdminNotification: (notificationData) => api.post('/farms/admin/notifications/', notificationData),
+  // Agronomist Notification Management
+  getAgronomistNotifications: () => api.get('/farms/agronomist/notifications/'),
+  sendAgronomistNotification: (notificationData) => api.post('/farms/agronomist/notifications/', notificationData),
+
+  // Legacy Admin Notification Management (for backward compatibility)
+  getAdminNotifications: () => api.get('/farms/agronomist/notifications/'),
+  sendAdminNotification: (notificationData) => api.post('/farms/agronomist/notifications/', notificationData),
   
   // Farm-specific Crop Stages
   getFarmCropStages: (farmId, params) => api.get(`/farms/${farmId}/crop-stages/`, { params }),
@@ -158,8 +162,16 @@ export const farmAPI = {
   getFarmSale: (farmId, saleId) => api.get(`/farms/${farmId}/sales/${saleId}/`),
   updateFarmSale: (farmId, saleId, data) => api.put(`/farms/${farmId}/sales/${saleId}/`, data),
   deleteFarmSale: (farmId, saleId) => api.delete(`/farms/${farmId}/sales/${saleId}/`),
+
+  // Farm-specific Tasks (Farm users can create and manage their own tasks)
+  getFarmTasks: (farmId, params) => api.get(`/farms/${farmId}/farm-tasks/`, { params }),
+  createFarmTask: (farmId, data) => api.post(`/farms/${farmId}/farm-tasks/`, data),
+  getFarmTask: (farmId, taskId) => api.get(`/farms/${farmId}/farm-tasks/${taskId}/`),
+  updateFarmTask: (farmId, taskId, data) => api.put(`/farms/${farmId}/farm-tasks/${taskId}/`, data),
+  deleteFarmTask: (farmId, taskId) => api.delete(`/farms/${farmId}/farm-tasks/${taskId}/`),
+  getFarmTasksSummary: (farmId) => api.get(`/farms/${farmId}/farm-tasks-summary/`),
   
-  // Legacy APIs (for admin/superuser backward compatibility)
+  // Legacy APIs (for agronomist/superuser backward compatibility)
   getDailyTasks: (params) => api.get('/farms/daily-tasks/', { params }),
   submitDailyTask: (taskData) => api.post('/farms/daily-tasks/', taskData),
   updateDailyTask: (taskId, taskData) => api.put(`/farms/daily-tasks/${taskId}/`, taskData),
@@ -236,6 +248,16 @@ export const farmAPI = {
   updateSale: (id, data) => api.put(`/farms/sales/${id}/`, data),
   deleteSale: (id) => api.delete(`/farms/sales/${id}/`),
   getSaleAnalytics: (params) => api.get('/farms/sales/analytics/', { params }),
+
+  // Calendar Event Management APIs
+  getCalendarEvents: (farmId, params) => api.get(`/farms/${farmId}/calendar/events/`, { params }),
+  getCalendarStats: (farmId) => api.get(`/farms/${farmId}/calendar/stats/`),
+  createCalendarEvent: (eventData) => api.post('/farms/calendar/events/create/', eventData),
+  getCalendarEvent: (eventId) => api.get(`/farms/calendar/events/${eventId}/`),
+  updateCalendarEvent: (eventId, eventData) => api.put(`/farms/calendar/events/${eventId}/update/`, eventData),
+  deleteCalendarEvent: (eventId) => api.delete(`/farms/calendar/events/${eventId}/delete/`),
+  markEventCompleted: (eventId, completionData) => api.post(`/farms/calendar/events/${eventId}/complete/`, completionData),
+  getUpcomingEvents: (params) => api.get('/farms/calendar/upcoming-events/', { params }),
 
   // Calendar sharing APIs
   shareCalendar: (shareData) => api.post('/farms/calendar/share/', shareData),

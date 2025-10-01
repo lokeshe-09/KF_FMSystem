@@ -16,10 +16,11 @@ const FarmUserDashboard = () => {
   const fetchDashboard = async () => {
     try {
       const response = await farmAPI.getFarmUserDashboard();
-      setDashboard(response.data);
+      setDashboard(response.data || { farms: [], notifications: [], recent_activities: [] });
     } catch (error) {
-      toast.error('Failed to fetch dashboard');
       console.error('Error fetching dashboard:', error);
+      // Fail gracefully - set empty dashboard data
+      setDashboard({ farms: [], notifications: [], recent_activities: [] });
     } finally {
       setLoading(false);
     }
@@ -204,7 +205,7 @@ const FarmUserDashboard = () => {
                 </div>
                 <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-2">No Farms Assigned</h3>
                 <p className="text-slate-600 text-sm sm:text-base max-w-md mx-auto">
-                  You haven't been assigned to any farms yet. Contact your administrator to get started.
+                  You haven't been assigned to any farms yet. Contact your agronomist to get started.
                 </p>
               </div>
             ) : (

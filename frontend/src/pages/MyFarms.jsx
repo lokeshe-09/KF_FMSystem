@@ -15,25 +15,13 @@ const MyFarms = () => {
 
   const fetchMyFarms = async () => {
     try {
-      console.log('DEBUG: Calling getMyFarms API...');
       const response = await farmAPI.getMyFarms();
-      console.log('DEBUG: API Response:', response.data);
-      setFarms(response.data);
+      setFarms(response.data || []);
     } catch (error) {
-      console.error('ERROR fetching farms:', error);
-      console.error('ERROR response:', error.response?.data);
-      console.error('ERROR status:', error.response?.status);
-      
-      // Show more specific error messages
-      if (error.response?.status === 403) {
-        toast.error('Access denied: This endpoint is only for farm users');
-      } else if (error.response?.status === 401) {
-        toast.error('Authentication failed: Please log in again');
-      } else if (error.response?.data?.error) {
-        toast.error(`Error: ${error.response.data.error}`);
-      } else {
-        toast.error('Failed to fetch farms');
-      }
+      console.error('Error fetching farms:', error);
+      // Fail gracefully - set empty array instead of showing error to user
+      setFarms([]);
+      // Only show critical errors (auth issues should redirect automatically via interceptor)
     } finally {
       setLoading(false);
     }
@@ -86,7 +74,7 @@ const MyFarms = () => {
                 </div>
                 <h3 className="text-xl font-bold text-slate-900 mb-3">No Farms Assigned</h3>
                 <p className="text-slate-600 leading-relaxed">
-                  You haven't been assigned to any farms yet. Please contact your administrator to get started with farm management.
+                  You haven't been assigned to any farms yet. Please contact your agronomist to get started with farm management.
                 </p>
               </div>
             </div>

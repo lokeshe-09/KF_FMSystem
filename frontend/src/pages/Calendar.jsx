@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import AddEventModal from '../components/AddEventModal';
 import { farmAPI } from '../services/api';
 import useWebSocket from '../hooks/useWebSocket';
 import toast from 'react-hot-toast';
 
 // Production constants
 const CACHE_DURATION = 3 * 60 * 1000; // 3 minutes for calendar data
-const REFRESH_INTERVAL = 60000; // 1 minute auto-refresh
+const REFRESH_INTERVAL = 5 * 60 * 1000; // 5 minutes auto-refresh (reduced frequency)
+const DEBOUNCE_DELAY = 300; // 300ms debounce for rapid updates
 const EVENT_TYPES = {
   HARVEST: 'harvest',
   STAGE_TRANSITION: 'stage_transition',
@@ -74,7 +76,9 @@ const Calendar = () => {
   const [cacheData, setCacheData] = useState(new Map());
   const [activeAlerts, setActiveAlerts] = useState([]);
   const [customEvents, setCustomEvents] = useState([]);
+  const [calendarEvents, setCalendarEvents] = useState([]);
   const [showEventModal, setShowEventModal] = useState(false);
+  const [showAddEventModal, setShowAddEventModal] = useState(false);
   const [optimizationRecommendations, setOptimizationRecommendations] = useState([]);
   const [showOptimizationPanel, setShowOptimizationPanel] = useState(false);
   const [editingEvent, setEditingEvent] = useState(null);
@@ -88,11 +92,25 @@ const Calendar = () => {
   const [isExporting, setIsExporting] = useState(false);
   const refreshIntervalRef = useRef(null);
   const [dataVersion, setDataVersion] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const debounceTimerRef = useRef(null);
 
   // Utility functions (moved before useMemo)
   const formatDate = (date) => {
     return date.toISOString().split('T')[0];
   };
+
+  // Debounced function to prevent rapid state updates
+  const debouncedUpdateStates = useCallback((updateFunction) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      updateFunction();
+      setIsRefreshing(false);
+    }, DEBOUNCE_DELAY);
+  }, []);
 
   // Event filtering function (moved before useMemo)
   const getFilteredEvents = (events) => {
@@ -427,27 +445,7 @@ const Calendar = () => {
     };
   }, []);
 
-  // Auto-refresh calendar data
-  useEffect(() => {
-    if (isOnline) {
-      refreshIntervalRef.current = setInterval(() => {
-        fetchCropStages(true); // Use cache if available
-      }, REFRESH_INTERVAL);
-    }
-
-    return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
-    };
-  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    fetchFarms();
-    fetchCropStages();
-  }, [selectedFarm, farmId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Cache management
+  // Cache management (moved before functions that use it)
   const getCachedData = useCallback((key) => {
     const cached = cacheData.get(key);
     if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
@@ -464,24 +462,34 @@ const Calendar = () => {
   }, []);
 
   // Fetch farms for dropdown (with proper data isolation)
-  const fetchFarms = useCallback(async () => {
+  const fetchFarms = useCallback(async (silentUpdate = false) => {
     try {
       const response = await farmAPI.getFarms();
       // Security: Only show farms user has access to
-      setFarms(response.data);
 
-      if (!selectedFarm && response.data.length > 0) {
-        setSelectedFarm(farmId || response.data[0].id);
+      if (!silentUpdate) {
+        setFarms(response.data);
+        if (!selectedFarm && response.data.length > 0) {
+          setSelectedFarm(farmId || response.data[0].id);
+        }
+      } else {
+        // Silent update - only update if data has changed
+        setFarms(prevFarms => {
+          const hasChanged = JSON.stringify(prevFarms) !== JSON.stringify(response.data);
+          return hasChanged ? response.data : prevFarms;
+        });
       }
     } catch (error) {
       console.error('Error fetching farms:', error);
-      setFarms([]);
-      setHasError(true);
-      setErrorMessage(`Failed to fetch farms: ${error.message || 'Network error'}`);
+      if (!silentUpdate) {
+        setFarms([]);
+        setHasError(true);
+        setErrorMessage(`Failed to fetch farms: ${error.message || 'Network error'}`);
+      }
     }
-  }, [farmId]);
+  }, [farmId, selectedFarm]);
 
-  const fetchCropStages = useCallback(async (useCache = true) => {
+  const fetchCropStages = useCallback(async (useCache = true, silentUpdate = false) => {
     if (!selectedFarm) return;
 
     const cacheKey = `calendar_data_${selectedFarm}`;
@@ -491,14 +499,21 @@ const Calendar = () => {
       if (useCache && isOnline) {
         const cachedData = getCachedData(cacheKey);
         if (cachedData) {
-          setCropStages(cachedData.crops);
-          setAllEvents(cachedData.events);
+          if (!silentUpdate) {
+            // Use debounced updates to prevent flickering for UI updates
+            debouncedUpdateStates(() => {
+              setCropStages(cachedData.crops);
+              setAllEvents(cachedData.events);
+            });
+          }
           return;
         }
       }
 
-      // Only show loading if we don't have data already
-      if (cropStages.length === 0 || !allEvents || Object.keys(allEvents).length === 0) {
+      // Only show loading if we don't have data already and it's not a silent update
+      // Use a ref to avoid circular dependency
+      const hasExistingData = cropStages.length > 0 && allEvents && Object.keys(allEvents).length > 0;
+      if (!silentUpdate && !isRefreshing && !hasExistingData) {
         setLoading(true);
       }
 
@@ -528,53 +543,140 @@ const Calendar = () => {
       const sales = [];
       const irrigations = [];
 
-      setCropStages(crops);
-      setDailyTasksData(dailyTasks);
-      setSpraySchedulesData(spraySchedules);
-      setFertigationData(fertigations);
-      setWorkerTasksData(workerTasks);
-      setIssueReportsData(issueReports);
-      setExpendituresData(expenditures);
-      setSalesData(sales);
-      setIrrigationData(irrigations);
-
       // Generate comprehensive events map
       const events = generateAllEvents(crops, dailyTasks, spraySchedules, fertigations, workerTasks, issueReports, expenditures, sales, irrigations);
 
-      // Set events directly (simplified for now)
-      setAllEvents(events);
-      setConflictAnalysis({});
-      setOptimizationSuggestions([]);
-
-      // Cache the data
+      // Cache the data first (always update cache)
       setCachedData(cacheKey, { crops, events, dailyTasks });
-      setLastSyncTime(new Date());
-      setDataVersion(prev => prev + 1);
+
+      if (!silentUpdate) {
+        // Batch all state updates together using debounced function to prevent flickering
+        debouncedUpdateStates(() => {
+          setCropStages(crops);
+          setDailyTasksData(dailyTasks);
+          setSpraySchedulesData(spraySchedules);
+          setFertigationData(fertigations);
+          setWorkerTasksData(workerTasks);
+          setIssueReportsData(issueReports);
+          setExpendituresData(expenditures);
+          setSalesData(sales);
+          setIrrigationData(irrigations);
+          setAllEvents(events);
+          setConflictAnalysis({});
+          setOptimizationSuggestions([]);
+          setLastSyncTime(new Date());
+          setDataVersion(prev => prev + 1);
+        });
+      } else {
+        // Silent update - only update cache and sync time
+        setLastSyncTime(new Date());
+
+        // Always update data for silent updates (state comparison causes circular dependency)
+        setCropStages(crops);
+        setAllEvents(events);
+        setDailyTasksData(dailyTasks);
+      }
 
     } catch (error) {
       console.error('Error fetching crop stages:', error);
-      setHasError(true);
-      setErrorMessage(`API Error: ${error.message || 'Failed to connect to server'}`);
 
-      // Try cached data first if available
-      const cachedData = getCachedData(cacheKey);
-      if (cachedData) {
-        setCropStages(cachedData.crops);
-        setDailyTasksData(cachedData.dailyTasks || []);
-        setAllEvents(cachedData.events);
-        toast.info('Using cached calendar data (offline mode)');
-      } else {
-        // No cache available, set empty data
-        setCropStages([]);
-        setDailyTasksData([]);
-        setAllEvents({});
-        setConflictAnalysis({});
-        setOptimizationSuggestions([]);
+      if (!silentUpdate) {
+        setHasError(true);
+        setErrorMessage(`API Error: ${error.message || 'Failed to connect to server'}`);
+
+        // Try cached data first if available
+        const cachedData = getCachedData(cacheKey);
+        if (cachedData) {
+          debouncedUpdateStates(() => {
+            setCropStages(cachedData.crops);
+            setDailyTasksData(cachedData.dailyTasks || []);
+            setAllEvents(cachedData.events);
+          });
+          toast.info('Using cached calendar data (offline mode)');
+        } else {
+          // No cache available, set empty data
+          debouncedUpdateStates(() => {
+            setCropStages([]);
+            setDailyTasksData([]);
+            setAllEvents({});
+            setConflictAnalysis({});
+            setOptimizationSuggestions([]);
+          });
+        }
       }
     } finally {
-      setLoading(false);
+      if (!silentUpdate) {
+        // Use timeout to prevent loading state flickering
+        setTimeout(() => {
+          setLoading(false);
+          setIsRefreshing(false);
+        }, 100);
+      }
     }
-  }, [selectedFarm, isOnline, getCachedData, setCachedData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedFarm, isOnline, getCachedData, setCachedData, debouncedUpdateStates, isRefreshing]); // Removed circular dependencies
+
+  // Initialize data (moved after function definitions)
+  useEffect(() => {
+    const initializeFarms = async () => {
+      await fetchFarms();
+    };
+    initializeFarms();
+  }, [farmId]); // Only depend on farmId to avoid circular dependency
+
+  useEffect(() => {
+    const initializeCropStages = async () => {
+      if (selectedFarm) {
+        await fetchCropStages();
+      }
+    };
+
+    initializeCropStages();
+
+    // Cleanup function to clear debounce timer when selectedFarm changes
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [selectedFarm]); // Only depend on selectedFarm to avoid circular dependency
+
+  // Controlled refresh and update intervals
+  useEffect(() => {
+    let refreshInterval;
+    let silentUpdateInterval;
+
+    if (isOnline && selectedFarm) {
+      // UI refresh interval (every 5 minutes)
+      refreshInterval = setInterval(() => {
+        if (!loading && !isRefreshing) {
+          setIsRefreshing(true);
+          fetchCropStages(true, false); // visible refresh
+        }
+      }, REFRESH_INTERVAL);
+
+      // Silent update interval (every minute)
+      silentUpdateInterval = setInterval(() => {
+        fetchCropStages(true, true); // silent update
+      }, 60000);
+    }
+
+    return () => {
+      if (refreshInterval) clearInterval(refreshInterval);
+      if (silentUpdateInterval) clearInterval(silentUpdateInterval);
+    };
+  }, [selectedFarm, isOnline, loading, isRefreshing]); // Controlled dependencies
+
+  // Cleanup all timers on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Helper function to add events to the events object
   const addEvent = (events, dateKey, event) => {
@@ -2125,7 +2227,7 @@ const Calendar = () => {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const days = getDaysInMonth(currentDate);
 
-  if (loading) {
+  if (loading && !isRefreshing) {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -2137,42 +2239,65 @@ const Calendar = () => {
 
   return (
     <Layout>
-      <div className="p-6 max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-              🗓️ Smart Farm Calendar
-            </h1>
-            <p className="text-gray-600 dark:text-gray-300 mt-2">
-              Comprehensive crop management calendar with real-time updates
-            </p>
-            {lastSyncTime && (
-              <p className="text-xs text-gray-500 mt-1">
-                Last synced: {lastSyncTime.toLocaleTimeString()}
+      <div className="p-4 max-w-7xl mx-auto">
+        {/* Compact Header */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
+                <span>🗓️</span>
+                <span>Smart Farm Calendar</span>
+              </h1>
+              <p className="text-sm text-gray-600 mt-1">
+                Comprehensive crop management • Last synced: {lastSyncTime?.toLocaleTimeString() || 'Never'} • Silent updates every minute
               </p>
-            )}
-            {hasError && (
-              <div className="mt-2 px-3 py-1 bg-orange-100 dark:bg-orange-900/30 border border-orange-300 dark:border-orange-600 rounded-lg">
-                <p className="text-xs text-orange-700 dark:text-orange-300 flex items-center">
-                  <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
-                  </svg>
-                  {errorMessage || 'API connection failed'}
-                </p>
+            </div>
+
+            {/* Status indicators - compact */}
+            <div className="flex items-center space-x-2">
+              <div className={`flex items-center space-x-1 px-2 py-1 rounded-full text-xs ${
+                isOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+              }`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span>{isOnline ? 'Online' : 'Offline'}</span>
               </div>
-            )}
+
+              {isRefreshing && (
+                <div className="flex items-center space-x-1 px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-700">
+                  <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></div>
+                  <span>Refreshing...</span>
+                </div>
+              )}
+
+              <div className="flex items-center space-x-1 px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                <span>Smart</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-col lg:flex-row items-end lg:items-center space-y-4 lg:space-y-0 lg:space-x-4">
-            {/* Farm Selector */}
-            {!farmId && farms.length > 0 && (
-              <div className="flex flex-col">
-                <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Select Farm</label>
+          {hasError && (
+            <div className="mt-2 px-3 py-2 bg-orange-100 border border-orange-300 rounded-lg">
+              <p className="text-xs text-orange-700 flex items-center">
+                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.732-.833-2.5 0L4.268 19.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                {errorMessage || 'API connection failed'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Compact Control Bar */}
+        <div className="mb-4 bg-gray-50 rounded-xl p-3">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-3 lg:space-y-0">
+            <div className="flex items-center space-x-3">
+              {/* Farm Selector - Compact */}
+              {!farmId && farms.length > 0 && (
                 <select
                   value={selectedFarm}
                   onChange={(e) => setSelectedFarm(e.target.value)}
-                  className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">All Farms</option>
                   {farms.map(farm => (
@@ -2181,113 +2306,99 @@ const Calendar = () => {
                     </option>
                   ))}
                 </select>
-              </div>
-            )}
+              )}
 
-            {/* Status Indicators */}
+              {/* View Mode Toggle - Compact */}
+              <div className="flex rounded-md overflow-hidden bg-white border border-gray-300">
+                {[
+                  { mode: 'month', label: 'Month', icon: '📅' },
+                  { mode: 'week', label: 'Week', icon: '📊' },
+                  { mode: 'day', label: 'Day', icon: '📋' },
+                  { mode: 'agenda', label: 'Agenda', icon: '📝' }
+                ].map(({ mode, label, icon }) => (
+                  <button
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
+                    className={`px-3 py-1.5 text-sm font-medium transition-colors duration-200 ${
+                      viewMode === mode
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span className="hidden sm:inline">{icon} {label}</span>
+                    <span className="sm:hidden">{icon}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex items-center space-x-3">
-              <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
-                isOnline ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${
-                  isOnline ? 'bg-green-500' : 'bg-red-500'
-                }`}></div>
-                <span className="font-medium">{isOnline ? 'Online' : 'Offline'}</span>
-              </div>
-
-              <div className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
-                connectionStatus === 'connected' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'
-              }`}>
-                <div className={`w-2 h-2 rounded-full ${
-                  connectionStatus === 'connected' ? 'bg-blue-500' : 'bg-gray-500'
-                }`}></div>
-                <span className="font-medium">
-                  {connectionStatus === 'connected' ? 'Live' : 'Static'}
-                </span>
-              </div>
-            </div>
-
-            {/* View Mode Toggle */}
-            <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1">
-              {['month', 'week', 'day', 'agenda'].map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors ${
-                    viewMode === mode
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                  }`}
-                >
-                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                </button>
-              ))}
-            </div>
-
-            {/* Event Filter */}
-            <div className="flex flex-col">
-              <label className="text-xs font-medium text-gray-600 dark:text-gray-400 mb-1">Filter</label>
+              {/* Event Filter - Compact */}
               <select
                 value={eventFilter}
                 onChange={(e) => setEventFilter(e.target.value)}
-                className="px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="px-3 py-1.5 bg-white border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="all">All Events</option>
-                <option value={EVENT_TYPES.HARVEST}>🌾 Harvests</option>
-                <option value={EVENT_TYPES.STAGE_TRANSITION}>📅 Stages</option>
-                <option value={EVENT_TYPES.TRANSPLANT}>🌱 Transplants</option>
-                <option value={EVENT_TYPES.HEALTH_CHECK}>🚨 Health Checks</option>
-                <option value={EVENT_TYPES.DAILY_TASK}>📝 Daily Tasks</option>
-                <option value={EVENT_TYPES.WATER_MEASUREMENT}>💧 Water Quality</option>
-                <option value={EVENT_TYPES.SPRAY_SCHEDULED}>🚿 Spray Applications</option>
-                <option value={EVENT_TYPES.SPRAY_REMINDER}>🔔 Spray Reminders</option>
-                <option value={EVENT_TYPES.PHI_COMPLETION}>⏳ PHI Completions</option>
-                <option value={EVENT_TYPES.FERTIGATION_SCHEDULED}>💧 Fertigation</option>
-                <option value={EVENT_TYPES.WORKER_TASK_ASSIGNED}>📄 Worker Tasks</option>
-                <option value={EVENT_TYPES.ISSUE_REPORTED}>🚨 Issue Reports</option>
-                <option value={EVENT_TYPES.EXPENDITURE_RECORDED}>💰 Expenditures</option>
-                <option value={EVENT_TYPES.SALE_RECORDED}>📋 Sales & Deliveries</option>
-                <option value={EVENT_TYPES.IRRIGATION_APPLIED}>💧 Irrigation</option>
-                <option value={EVENT_TYPES.CONFLICT_DETECTED}>⚠️ Conflicts</option>
-                <option value={EVENT_TYPES.OPTIMIZATION_SUGGESTION}>💡 Optimizations</option>
-                <option value="overdue">⚠️ Overdue</option>
-                <option value="upcoming">📅 Upcoming</option>
+                <option value="high_priority">High Priority</option>
+                <option value="overdue">Overdue</option>
+                <option value="harvest">Harvest</option>
+                <option value="fertigation">Fertigation</option>
+                <option value="spray">Spray</option>
+                <option value="worker_tasks">Worker Tasks</option>
+                <option value="issues">Issues</option>
+                <option value="expenditures">Expenditures</option>
+                <option value="sales">Sales</option>
+                <option value="predictions">Predictions</option>
+                <option value="daily_tasks">Daily Tasks</option>
+                <option value="conflicts">Conflicts</option>
+                <option value="optimizations">Optimizations</option>
               </select>
+
+              {/* Add Event Button - Compact */}
+              <button
+                onClick={() => setShowAddEventModal(true)}
+                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition-colors duration-200 flex items-center space-x-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Add Event</span>
+              </button>
+
+              {/* Export Button - Compact */}
+              <button
+                onClick={() => setShowExportModal(true)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition-colors duration-200 flex items-center space-x-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Export</span>
+              </button>
             </div>
-
-            {/* Export Button */}
-            <button
-              onClick={() => setShowExportModal(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors duration-200 flex items-center space-x-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              <span>Export</span>
-            </button>
-
           </div>
         </div>
 
         {/* Calendar Navigation */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+        <div className="bg-white rounded-xl shadow-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <button
               onClick={() => navigateMonth(-1)}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+
+            <h2 className="text-xl font-semibold text-gray-900">
               {getMonthName(currentDate)}
             </h2>
             
             <button
               onClick={() => navigateMonth(1)}
-              className="p-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -2299,7 +2410,7 @@ const Calendar = () => {
           <div className="grid grid-cols-7 gap-1">
             {/* Week Day Headers */}
             {weekDays.map(day => (
-              <div key={day} className="p-3 text-center font-medium text-gray-500 dark:text-gray-400">
+              <div key={day} className="p-3 text-center font-medium text-gray-500">
                 {day}
               </div>
             ))}
@@ -2315,49 +2426,73 @@ const Calendar = () => {
                 <div
                   key={index}
                   className={`
-                    min-h-[80px] p-2 border transition-all duration-200 cursor-pointer
-                    ${!date ? 'bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-600' : ''}
-                    ${isToday(date) ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600' : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}
+                    min-h-[70px] p-2 border transition-all duration-200 cursor-pointer
+                    ${!date ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-200'}
+                    ${isToday(date) ? 'bg-blue-50 border-blue-300' : 'hover:bg-gray-50'}
                     ${selectedDate === date ? 'ring-2 ring-blue-500' : ''}
-                    ${hasOverdueEvents ? 'border-red-300 bg-red-50/30' : ''}
-                    ${hasHighPriorityEvents && !hasOverdueEvents ? 'border-orange-300 bg-orange-50/30' : ''}
+                    ${hasOverdueEvents ? 'bg-red-50 border-red-300' : ''}
+                    ${hasHighPriorityEvents && !hasOverdueEvents ? 'bg-orange-50 border-orange-300' : ''}
                   `}
                   onClick={() => date && setSelectedDate(selectedDate === date ? null : date)}
                 >
                   {date && (
                     <>
                       <div className={`
-                        text-sm font-medium mb-1
-                        ${isToday(date) ? 'text-blue-600 dark:text-blue-400' : 'text-gray-900 dark:text-white'}
+                        text-sm font-semibold mb-1 flex items-center justify-between
+                        ${isToday(date) ? 'text-blue-600' : 'text-gray-900'}
                       `}>
-                        {date.getDate()}
+                        <span>{date.getDate()}</span>
+                        {dayHasEvents && (
+                          <div className="flex items-center space-x-1">
+                            <div className={`w-2 h-2 rounded-full ${
+                              hasOverdueEvents ? 'bg-red-500' :
+                              hasHighPriorityEvents ? 'bg-orange-500' :
+                              'bg-green-500'
+                            }`}></div>
+                            <span className="text-xs text-gray-500">{events.length}</span>
+                          </div>
+                        )}
                       </div>
-                      
+
                       {dayHasEvents && (
-                        <div className="space-y-1 max-h-16 overflow-y-auto">
-                          {events.slice(0, 3).map((event, idx) => (
+                        <div className="space-y-1 max-h-12 overflow-hidden">
+                          {events.slice(0, 2).map((event, idx) => (
                             <div
                               key={idx}
                               className={`
-                                text-xs px-2 py-1 rounded truncate border ${
-                                  getEventPriorityColor(event)
-                                } ${event.isPrediction ? 'border-dashed opacity-70' : ''}
+                                text-xs px-1.5 py-0.5 rounded truncate transition-colors
+                                ${event.isOverdue ?
+                                  'bg-red-100 text-red-800 border border-red-300' :
+                                  event.priority === 'high' ?
+                                  'bg-orange-100 text-orange-800 border border-orange-300' :
+                                  event.color === 'green' ?
+                                  'bg-green-100 text-green-800 border border-green-300' :
+                                  event.color === 'blue' ?
+                                  'bg-blue-100 text-blue-800 border border-blue-300' :
+                                  event.color === 'purple' ?
+                                  'bg-purple-100 text-purple-800 border border-purple-300' :
+                                  'bg-gray-100 text-gray-800 border border-gray-300'
+                                }
+                                ${event.isPrediction ? 'border-dashed opacity-75' : ''}
                               `}
                               title={`${event.title} - ${event.description}`}
                             >
                               <div className="flex items-center space-x-1">
                                 <span>{event.icon}</span>
-                                <span className="truncate">
-                                  {event.crop ? event.crop.crop_name : event.title}
+                                <span className="truncate text-xs">
+                                  {(event.crop ? event.crop.crop_name : event.title).length > 8 ?
+                                    (event.crop ? event.crop.crop_name : event.title).substring(0, 8) + '...' :
+                                    (event.crop ? event.crop.crop_name : event.title)
+                                  }
                                 </span>
-                                {event.isOverdue && <span className="text-red-600">⚠️</span>}
-                                {event.isPrediction && <span className="text-gray-400">🔮</span>}
+                                {event.isOverdue && <span className="text-red-600 text-xs">⚠️</span>}
+                                {event.isPrediction && <span className="text-gray-400 text-xs">🔮</span>}
                               </div>
                             </div>
                           ))}
-                          {events.length > 3 && (
-                            <div className="text-xs text-gray-500 dark:text-gray-400 px-2 font-medium">
-                              +{events.length - 3} more events
+                          {events.length > 2 && (
+                            <div className="text-xs text-center text-gray-500 bg-gray-100 rounded px-1 py-0.5">
+                              +{events.length - 2}
                             </div>
                           )}
                         </div>
@@ -2405,9 +2540,9 @@ const Calendar = () => {
 
         {/* Selected Date Details */}
         {selectedDate && getMemoizedDateEvents(selectedDate).length > 0 && (
-          <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
+          <div className="mt-6 bg-white rounded-xl shadow-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              <h3 className="text-lg font-semibold text-gray-900">
                 📅 {selectedDate.toLocaleDateString('en-IN', {
                   weekday: 'long',
                   year: 'numeric',
@@ -2416,7 +2551,7 @@ const Calendar = () => {
                   timeZone: 'Asia/Kolkata'
                 })}
               </h3>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
+              <span className="text-sm text-gray-500">
                 {getMemoizedDateEvents(selectedDate).length} event(s)
               </span>
             </div>
@@ -2440,7 +2575,7 @@ const Calendar = () => {
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-2">
                       <span className="text-xl">{event.icon}</span>
-                      <h4 className="font-medium text-gray-900 dark:text-white">
+                      <h4 className="font-medium text-gray-900">
                         {event.title}
                       </h4>
                     </div>
@@ -2465,12 +2600,12 @@ const Calendar = () => {
                     </div>
                   </div>
 
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                  <p className="text-sm text-gray-600 mb-3">
                     {event.description}
                   </p>
 
                   {event.crop && (
-                    <div className="space-y-1 text-sm text-gray-600 dark:text-gray-300">
+                    <div className="space-y-1 text-sm text-gray-600">
                       <p><span className="font-medium">Crop:</span> {event.crop.crop_name} ({event.crop.variety})</p>
                       <p><span className="font-medium">Batch:</span> {event.crop.batch_code}</p>
                       {event.crop.current_stage && (
@@ -2493,9 +2628,9 @@ const Calendar = () => {
                   )}
 
                   {event.crop?.notes && (
-                    <div className="mt-3 p-3 bg-gray-100 dark:bg-gray-700 rounded text-sm">
-                      <p className="font-medium text-gray-900 dark:text-white mb-1">Notes:</p>
-                      <p className="text-gray-600 dark:text-gray-300">{event.crop.notes}</p>
+                    <div className="mt-3 p-3 bg-gray-100 rounded text-sm">
+                      <p className="font-medium text-gray-900 mb-1">Notes:</p>
+                      <p className="text-gray-600">{event.crop.notes}</p>
                     </div>
                   )}
                 </div>
@@ -2504,32 +2639,68 @@ const Calendar = () => {
           </div>
         )}
 
+        {/* Quick Info Panel - Compact */}
+        <div className="mb-4 grid grid-cols-4 md:grid-cols-6 gap-3">
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-gray-900">{cropStages.length}</div>
+            <div className="text-xs text-gray-600">Crops</div>
+          </div>
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-gray-900">
+              {Object.values(allEvents).reduce((acc, events) => acc + events.length, 0)}
+            </div>
+            <div className="text-xs text-gray-600">Total Events</div>
+          </div>
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-red-600">
+              {Object.values(allEvents).reduce((acc, events) => acc + events.filter(e => e.isOverdue).length, 0)}
+            </div>
+            <div className="text-xs text-gray-600">Overdue</div>
+          </div>
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center">
+            <div className="text-lg font-bold text-orange-600">
+              {Object.values(allEvents).reduce((acc, events) => acc + events.filter(e => e.priority === 'high').length, 0)}
+            </div>
+            <div className="text-xs text-gray-600">High Priority</div>
+          </div>
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center md:block hidden">
+            <div className="text-lg font-bold text-purple-600">
+              {Object.values(allEvents).reduce((acc, events) => acc + events.filter(e => e.isPrediction).length, 0)}
+            </div>
+            <div className="text-xs text-gray-600">Predictions</div>
+          </div>
+          <div className="bg-white border border-gray-300 rounded-lg p-3 text-center md:block hidden">
+            <div className="text-lg font-bold text-gray-600">v{dataVersion}</div>
+            <div className="text-xs text-gray-600">Data Ver.</div>
+          </div>
+        </div>
+
         {/* Comprehensive Summary Stats */}
         <div className="mt-6 grid grid-cols-2 lg:grid-cols-6 gap-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-green-100 dark:bg-green-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-green-600 dark:text-green-400 text-lg">🌱</span>
+                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                  <span className="text-green-600 text-lg">🌱</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Total Crops</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">{cropStages.length}</p>
+                <p className="text-xs font-medium text-gray-500">Total Crops</p>
+                <p className="text-xl font-semibold text-gray-900">{cropStages.length}</p>
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 dark:text-blue-400 text-lg">📅</span>
+                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                  <span className="text-blue-600 text-lg">📅</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">This Month</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-xs font-medium text-gray-500">This Month</p>
+                <p className="text-xl font-semibold text-gray-900">
                   {Object.values(allEvents).reduce((acc, events) => {
                     return acc + events.filter(event => {
                       if (!event.crop?.expected_harvest_date) return false;
@@ -2543,16 +2714,16 @@ const Calendar = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-red-600 dark:text-red-400 text-lg">⚠️</span>
+                <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                  <span className="text-red-600 text-lg">⚠️</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Overdue</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-xs font-medium text-gray-500">Overdue</p>
+                <p className="text-xl font-semibold text-gray-900">
                   {Object.values(allEvents).reduce((acc, events) => {
                     return acc + events.filter(event => event.isOverdue).length;
                   }, 0)}
@@ -2561,16 +2732,16 @@ const Calendar = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-orange-600 dark:text-orange-400 text-lg">🚨</span>
+                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                  <span className="text-orange-600 text-lg">🚨</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">High Priority</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-xs font-medium text-gray-500">High Priority</p>
+                <p className="text-xl font-semibold text-gray-900">
                   {Object.values(allEvents).reduce((acc, events) => {
                     return acc + events.filter(event => event.priority === 'high').length;
                   }, 0)}
@@ -2579,16 +2750,16 @@ const Calendar = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-purple-100 dark:bg-purple-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-purple-600 dark:text-purple-400 text-lg">🔮</span>
+                <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
+                  <span className="text-purple-600 text-lg">🔮</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Predictions</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">
+                <p className="text-xs font-medium text-gray-500">Predictions</p>
+                <p className="text-xl font-semibold text-gray-900">
                   {Object.values(allEvents).reduce((acc, events) => {
                     return acc + events.filter(event => event.isPrediction).length;
                   }, 0)}
@@ -2597,16 +2768,16 @@ const Calendar = () => {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-4">
+          <div className="bg-white rounded-xl shadow-lg p-4">
             <div className="flex items-center">
               <div className="flex-shrink-0">
-                <div className="w-8 h-8 bg-gray-100 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                  <span className="text-gray-600 dark:text-gray-300 text-lg">📊</span>
+                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
+                  <span className="text-gray-600 text-lg">📊</span>
                 </div>
               </div>
               <div className="ml-3">
-                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">Data Version</p>
-                <p className="text-xl font-semibold text-gray-900 dark:text-white">v{dataVersion}</p>
+                <p className="text-xs font-medium text-gray-500">Data Version</p>
+                <p className="text-xl font-semibold text-gray-900">v{dataVersion}</p>
               </div>
             </div>
           </div>
@@ -2664,15 +2835,15 @@ const Calendar = () => {
           }
 
           return (
-            <div className="mt-6 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">🏷️ Event Legend</h3>
+            <div className="mt-6 bg-white rounded-xl shadow-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">🏷️ Event Legend</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {existingTypes.map(eventType => {
                   const typeInfo = EVENT_TYPE_INFO[eventType];
                   return (
                     <div key={eventType} className="flex items-center space-x-2">
                       <div className={`w-4 h-4 ${typeInfo.color} rounded`}></div>
-                      <span className="text-sm text-gray-600 dark:text-gray-300">{typeInfo.name}</span>
+                      <span className="text-sm text-gray-600">{typeInfo.name}</span>
                     </div>
                   );
                 })}
@@ -2684,14 +2855,14 @@ const Calendar = () => {
         {/* Export Modal */}
         {showExportModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
+            <div className="bg-white rounded-xl shadow-2xl p-6 max-w-md w-full mx-4">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                <h3 className="text-lg font-semibold text-gray-900">
                   📤 Export Calendar
                 </h3>
                 <button
                   onClick={() => setShowExportModal(false)}
-                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                  className="text-gray-400 hover:text-gray-600"
                 >
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -2702,13 +2873,13 @@ const Calendar = () => {
               <div className="space-y-4">
                 {/* Export Format */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Export Format
                   </label>
                   <select
                     value={exportOptions.format}
                     onChange={(e) => setExportOptions({...exportOptions, format: e.target.value})}
-                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="ical">📅 iCal (.ics) - Standard Calendar</option>
                     <option value="google">🗓️ Google Calendar</option>
@@ -2720,13 +2891,13 @@ const Calendar = () => {
 
                 {/* Date Range */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Date Range
                   </label>
                   <select
                     value={exportOptions.dateRange}
                     onChange={(e) => setExportOptions({...exportOptions, dateRange: e.target.value})}
-                    className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="current_month">📅 Current Month</option>
                     <option value="next_month">➡️ Next Month</option>
@@ -2738,10 +2909,10 @@ const Calendar = () => {
 
                 {/* Event Types */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Event Types (Leave empty for all)
                   </label>
-                  <div className="max-h-32 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg p-2">
+                  <div className="max-h-32 overflow-y-auto border border-gray-300 rounded-lg p-2">
                     {Object.entries(EVENT_TYPES).map(([key, value]) => (
                       <label key={value} className="flex items-center space-x-2 text-sm py-1">
                         <input
@@ -2762,7 +2933,7 @@ const Calendar = () => {
                           }}
                           className="text-blue-600"
                         />
-                        <span className="text-gray-700 dark:text-gray-300 capitalize">
+                        <span className="text-gray-700 capitalize">
                           {key.replace(/_/g, ' ').toLowerCase()}
                         </span>
                       </label>
@@ -2779,7 +2950,7 @@ const Calendar = () => {
                       onChange={(e) => setExportOptions({...exportOptions, includeCompleted: e.target.checked})}
                       className="text-blue-600"
                     />
-                    <span className="text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-sm text-gray-700">
                       Include completed events
                     </span>
                   </label>
@@ -2787,10 +2958,10 @@ const Calendar = () => {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end space-x-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+              <div className="flex items-center justify-end space-x-3 mt-6 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => setShowExportModal(false)}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white transition-colors"
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
                 >
                   Cancel
                 </button>
@@ -2822,6 +2993,19 @@ const Calendar = () => {
         )}
 
       </div>
+
+      {/* Add Event Modal */}
+      <AddEventModal
+        isOpen={showAddEventModal}
+        onClose={() => setShowAddEventModal(false)}
+        selectedDate={selectedDate}
+        farmId={selectedFarm}
+        onEventCreated={() => {
+          // Refresh calendar data when event is created
+          fetchCropStages(false);
+          toast.success('Calendar refreshed with new event');
+        }}
+      />
     </Layout>
   );
 };

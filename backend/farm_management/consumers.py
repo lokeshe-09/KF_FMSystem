@@ -48,31 +48,31 @@ class NotificationConsumer(AsyncWebsocketConsumer):
         # Accept connection first
         await self.accept()
         
-        # Join admin notification group if user is admin or superuser
-        if hasattr(self.user, 'user_type') and self.user.user_type in ['admin', 'superuser']:
-            self.group_name = 'admin_notifications'
+        # Join agronomist notification group if user is admin or superuser
+        if hasattr(self.user, 'user_type') and self.user.user_type in ['agronomist', 'superuser']:
+            self.group_name = 'agronomist_notifications'
             await self.channel_layer.group_add(
                 self.group_name,
                 self.channel_name
             )
             
-            # Also join specific admin group for targeted notifications
-            self.specific_admin_group = f'admin_{self.user.id}_notifications'
+            # Also join specific agronomist group for targeted notifications
+            self.specific_agronomist_group = f'agronomist_{self.user.id}_notifications'
             await self.channel_layer.group_add(
-                self.specific_admin_group,
+                self.specific_agronomist_group,
                 self.channel_name
             )
             
             # Send confirmation message
             await self.send(text_data=json.dumps({
                 'type': 'connection_established',
-                'message': f'Successfully connected to admin notifications as {self.user.username}',
+                'message': f'Successfully connected to agronomist notifications as {self.user.username}',
                 'user_type': self.user.user_type,
-                'admin_id': self.user.id,
-                'groups': [self.group_name, self.specific_admin_group]
+                'agronomist_id': self.user.id,
+                'groups': [self.group_name, self.specific_agronomist_group]
             }))
         else:
-            # Non-admin users can connect but don't join notification group
+            # Non-agronomist users can connect but don't join notification group
             await self.send(text_data=json.dumps({
                 'type': 'connection_established',
                 'message': f'Successfully connected as {self.user.username}',
@@ -85,9 +85,9 @@ class NotificationConsumer(AsyncWebsocketConsumer):
                 self.group_name,
                 self.channel_name
             )
-        if hasattr(self, 'specific_admin_group'):
+        if hasattr(self, 'specific_agronomist_group'):
             await self.channel_layer.group_discard(
-                self.specific_admin_group,
+                self.specific_agronomist_group,
                 self.channel_name
             )
 
@@ -146,13 +146,13 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             logger.error(f"Failed to send WebSocket message: {e}")
 
     @classmethod
-    async def send_notification_to_admins(cls, title, message, notification_type='general', farm=None, user=None):
+    async def send_notification_to_agronomists(cls, title, message, notification_type='general', farm=None, user=None):
         from channels.layers import get_channel_layer
         
         channel_layer = get_channel_layer()
         if channel_layer:
             await channel_layer.group_send(
-                'admin_notifications',
+                'agronomist_notifications',
                 {
                     'type': 'notification_message',
                     'title': title,

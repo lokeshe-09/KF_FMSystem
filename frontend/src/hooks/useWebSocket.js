@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const useWebSocket = (onMessage = null) => {
-  const { user, isAdmin, isSuperuser } = useAuth();
+  const { user, isAgronomist, isSuperuser } = useAuth();
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [isConnecting, setIsConnecting] = useState(false);
   const ws = useRef(null);
@@ -19,7 +19,7 @@ const useWebSocket = (onMessage = null) => {
       return;
     }
 
-    if (!isAdmin && !isSuperuser) {
+    if (!isAgronomist && !isSuperuser) {
       return;
     }
 
@@ -31,7 +31,7 @@ const useWebSocket = (onMessage = null) => {
     setIsConnecting(true);
     setConnectionStatus('connecting');
 
-    const wsUrl = `ws://127.0.0.1:8000/ws/notifications/?token=${token}`;
+    const wsUrl = `wss://kffms.aicraftalchemy.com/ws/notifications/?token=${token}`;
 
     try {
       ws.current = new WebSocket(wsUrl);
@@ -53,7 +53,7 @@ const useWebSocket = (onMessage = null) => {
           const data = JSON.parse(event.data);
 
           if (data.type === 'connection_established') {
-            if (data.user_type === 'admin' || data.user_type === 'superuser') {
+            if (data.user_type === 'agronomist' || data.user_type === 'superuser') {
               setConnectionStatus('connected');
               toast.success('Real-time notifications connected!', {
                 duration: 3000,
@@ -100,13 +100,13 @@ const useWebSocket = (onMessage = null) => {
         // Only attempt reconnection for unexpected closures and if user is still admin
         const shouldReconnect = event.code !== 1000 && event.code < 4000 && 
                                 reconnectAttemptsRef.current < maxReconnectAttempts &&
-                                (isAdmin || isSuperuser);
+                                (isAgronomist || isSuperuser);
         
         if (shouldReconnect) {
           const timeout = Math.min(Math.pow(2, reconnectAttemptsRef.current) * 2000, 30000); // Max 30 second delay
           
           reconnectTimeoutRef.current = setTimeout(() => {
-            if (isAdmin || isSuperuser) { // Double check user still has permission
+            if (isAgronomist || isSuperuser) { // Double check user still has permission
               reconnectAttemptsRef.current++;
               connect();
             }
@@ -127,7 +127,7 @@ const useWebSocket = (onMessage = null) => {
       setConnectionStatus('error');
       setIsConnecting(false);
     }
-  }, [isAdmin, isSuperuser]);
+  }, [isAgronomist, isSuperuser]);
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -148,16 +148,16 @@ const useWebSocket = (onMessage = null) => {
   const reconnect = useCallback(() => {
     disconnect();
     setTimeout(() => {
-      if (isAdmin || isSuperuser) {
+      if (isAgronomist || isSuperuser) {
         connect();
       }
     }, 3000); // 3 second delay for manual reconnect
-  }, [connect, disconnect, isAdmin, isSuperuser]);
+  }, [connect, disconnect, isAgronomist, isSuperuser]);
 
   useEffect(() => {
     let timeoutId;
     
-    if (user && (isAdmin || isSuperuser)) {
+    if (user && (isAgronomist || isSuperuser)) {
       // Delay initial connection to prevent rapid reconnections
       timeoutId = setTimeout(connect, 500);
     } else {
@@ -168,7 +168,7 @@ const useWebSocket = (onMessage = null) => {
       clearTimeout(timeoutId);
       disconnect();
     };
-  }, [user?.id, isAdmin, isSuperuser]); // Only depend on user ID, not full user object
+  }, [user?.id, isAgronomist, isSuperuser]); // Only depend on user ID, not full user object
 
   return {
     connectionStatus,

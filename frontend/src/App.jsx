@@ -14,7 +14,7 @@ import SpraySchedule from './pages/SpraySchedule';
 import Notifications from './pages/Notifications';
 import FarmNotifications from './pages/FarmNotifications';
 import FarmSpecificNotifications from './pages/FarmSpecificNotifications';
-import AdminNotificationManager from './pages/AdminNotificationManager';
+import AgronomistNotificationManager from './pages/AgronomistNotificationManager';
 import UserManagement from './pages/UserManagement';
 import FarmUserManagement from './pages/FarmUserManagement';
 import Calendar from './pages/Calendar';
@@ -30,6 +30,7 @@ import PlantDiseasePredictionDetail from './pages/PlantDiseasePredictionDetail';
 import MyFarms from './pages/MyFarms';
 import FarmUserDashboard from './pages/FarmUserDashboard';
 import FarmDashboard from './pages/FarmDashboard';
+import FarmTasks from './pages/FarmTasks';
 
 import { Toaster } from 'react-hot-toast';
 
@@ -37,23 +38,27 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <div className="App">
-          <Toaster 
+        <div className="App force-light-theme">
+          <Toaster
             position="top-right"
             toastOptions={{
               duration: 4000,
               style: {
-                background: '#363636',
-                color: '#fff',
+                background: '#ffffff',
+                color: '#334155',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
               },
               success: {
                 style: {
                   background: '#10B981',
+                  color: '#ffffff',
                 },
               },
               error: {
                 style: {
                   background: '#EF4444',
+                  color: '#ffffff',
                 },
               },
             }}
@@ -62,7 +67,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             
-            {/* Admin/Superuser Dashboard */}
+            {/* Agronomist/Superuser Dashboard */}
             <Route 
               path="/dashboard" 
               element={
@@ -157,17 +162,26 @@ function App() {
               } 
             />
             
-            <Route 
-              path="/farm/:farmId/worker-tasks" 
+            <Route
+              path="/farm/:farmId/worker-tasks"
               element={
                 <ProtectedRoute farmUserOnly>
                   <WorkerTaskManagement />
                 </ProtectedRoute>
-              } 
+              }
             />
-            
-            <Route 
-              path="/farm/:farmId/issue-reports" 
+
+            <Route
+              path="/farm/:farmId/farm-tasks"
+              element={
+                <ProtectedRoute farmUserOnly>
+                  <FarmTasks />
+                </ProtectedRoute>
+              }
+            />
+
+            <Route
+              path="/farm/:farmId/issue-reports"
               element={
                 <ProtectedRoute farmUserOnly>
                   <IssueReports />
@@ -232,7 +246,7 @@ function App() {
             <Route 
               path="/create-user" 
               element={
-                <ProtectedRoute adminOnly>
+                <ProtectedRoute agronomistOnly>
                   <CreateFarmUser />
                 </ProtectedRoute>
               } 
@@ -241,7 +255,7 @@ function App() {
             <Route 
               path="/create-farm" 
               element={
-                <ProtectedRoute adminOnly>
+                <ProtectedRoute agronomistOnly>
                   <CreateFarm />
                 </ProtectedRoute>
               } 
@@ -256,7 +270,7 @@ function App() {
               } 
             />
             
-            {/* Legacy routes for admin/superuser */}
+            {/* Legacy routes for agronomist/superuser */}
             <Route 
               path="/daily-tasks" 
               element={
@@ -350,17 +364,17 @@ function App() {
             <Route 
               path="/notifications" 
               element={
-                <ProtectedRoute adminOnly>
+                <ProtectedRoute agronomistOnly>
                   <Notifications />
                 </ProtectedRoute>
               } 
             />
             
             <Route 
-              path="/admin/notification-manager" 
+              path="/agronomist/notification-manager" 
               element={
-                <ProtectedRoute adminOnly>
-                  <AdminNotificationManager />
+                <ProtectedRoute agronomistOnly>
+                  <AgronomistNotificationManager />
                 </ProtectedRoute>
               } 
             />
@@ -377,7 +391,7 @@ function App() {
             <Route 
               path="/farm-user-management" 
               element={
-                <ProtectedRoute adminOnly>
+                <ProtectedRoute agronomistOnly>
                   <FarmUserManagement />
                 </ProtectedRoute>
               } 

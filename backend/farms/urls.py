@@ -2,7 +2,7 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
-    # General farm management (for admins)
+    # General farm management (for agronomists)
     path('', views.get_farms, name='get_farms'),
     path('create/', views.create_farm, name='create_farm'),
     path('<int:farm_id>/', views.farm_detail, name='farm_detail'),
@@ -13,8 +13,8 @@ urlpatterns = [
     path('dashboard/', views.farm_user_dashboard, name='farm_user_dashboard'),
     path('my-notifications/', views.farm_user_notifications, name='farm_user_notifications'),
     
-    # Admin Notification Management
-    path('admin/notifications/', views.admin_notifications, name='admin_notifications'),
+    # Agronomist Notification Management
+    path('agronomist/notifications/', views.agronomist_notifications, name='agronomist_notifications'),
     
     # Farm-specific URLs (for farm users working within a specific farm context)
     path('<int:farm_id>/dashboard/', views.farm_specific_dashboard, name='farm_specific_dashboard'),
@@ -24,24 +24,27 @@ urlpatterns = [
     path('<int:farm_id>/crop-stages/<int:stage_id>/', views.farm_crop_stage_detail, name='farm_crop_stage_detail'),
     path('<int:farm_id>/notifications/', views.farm_notifications, name='farm_notifications'),
     path('<int:farm_id>/sales/', views.farm_sales, name='farm_sales'),
-    # TODO: Add remaining farm-specific endpoints as needed
-    # path('<int:farm_id>/spray-irrigation-logs/', views.farm_spray_irrigation_logs, name='farm_spray_irrigation_logs'),
-    # path('<int:farm_id>/fertigations/', views.farm_fertigations, name='farm_fertigations'),
-    # path('<int:farm_id>/fertigations/<int:pk>/', views.farm_fertigation_detail, name='farm_fertigation_detail'),
-    # path('<int:farm_id>/spray-schedules/', views.farm_spray_schedules, name='farm_spray_schedules'),
-    # path('<int:farm_id>/spray-schedules/<int:schedule_id>/', views.farm_spray_schedule_detail, name='farm_spray_schedule_detail'),
-    # path('<int:farm_id>/workers/', views.farm_workers, name='farm_workers'),
-    # path('<int:farm_id>/workers/<int:worker_id>/', views.farm_worker_detail, name='farm_worker_detail'),
-    # path('<int:farm_id>/worker-tasks/', views.farm_worker_tasks, name='farm_worker_tasks'),
-    # path('<int:farm_id>/worker-tasks/<int:task_id>/', views.farm_worker_task_detail, name='farm_worker_task_detail'),
-    # path('<int:farm_id>/issue-reports/', views.farm_issue_reports, name='farm_issue_reports'),
-    # path('<int:farm_id>/issue-reports/<int:issue_id>/', views.farm_issue_report_detail, name='farm_issue_report_detail'),
-    # path('<int:farm_id>/expenditures/', views.farm_expenditures, name='farm_expenditures'),
-    # path('<int:farm_id>/expenditures/<int:expenditure_id>/', views.farm_expenditure_detail, name='farm_expenditure_detail'),
-    # path('<int:farm_id>/sales/', views.farm_sales, name='farm_sales'),
-    # path('<int:farm_id>/sales/<int:sale_id>/', views.farm_sale_detail, name='farm_sale_detail'),
-    
-    # Legacy URLs (for admin/superuser backward compatibility)
+
+    # Farm-specific endpoints
+    path('<int:farm_id>/spray-schedules/', views.farm_spray_schedules, name='farm_spray_schedules'),
+    path('<int:farm_id>/spray-schedules/<int:schedule_id>/', views.farm_spray_schedule_detail, name='farm_spray_schedule_detail'),
+    path('<int:farm_id>/fertigations/', views.farm_fertigations, name='farm_fertigations'),
+    path('<int:farm_id>/fertigations/<int:pk>/', views.farm_fertigation_detail, name='farm_fertigation_detail'),
+    path('<int:farm_id>/workers/', views.farm_workers, name='farm_workers'),
+    path('<int:farm_id>/workers/<int:worker_id>/', views.farm_worker_detail, name='farm_worker_detail'),
+    path('<int:farm_id>/worker-tasks/', views.farm_worker_tasks, name='farm_worker_tasks'),
+    path('<int:farm_id>/worker-tasks/<int:task_id>/', views.farm_worker_task_detail, name='farm_worker_task_detail'),
+    path('<int:farm_id>/issue-reports/', views.farm_issue_reports, name='farm_issue_reports'),
+    path('<int:farm_id>/issue-reports/<int:issue_id>/', views.farm_issue_report_detail, name='farm_issue_report_detail'),
+    path('<int:farm_id>/expenditures/', views.farm_expenditures, name='farm_expenditures'),
+    path('<int:farm_id>/expenditures/<int:expenditure_id>/', views.farm_expenditure_detail, name='farm_expenditure_detail'),
+
+    # Farm Tasks (Farm users can create and manage their own tasks)
+    path('<int:farm_id>/farm-tasks/', views.farm_tasks, name='farm_tasks'),
+    path('<int:farm_id>/farm-tasks/<int:task_id>/', views.farm_task_detail, name='farm_task_detail'),
+    path('<int:farm_id>/farm-tasks-summary/', views.farm_tasks_summary, name='farm_tasks_summary'),
+
+    # Legacy URLs (for agronomist/superuser backward compatibility)
     path('daily-tasks/', views.daily_tasks, name='daily_tasks'),
     path('daily-tasks/<int:task_id>/', views.daily_task_detail, name='daily_task_detail'),
     path('notifications/', views.notifications, name='notifications'),
@@ -71,7 +74,7 @@ urlpatterns = [
     path('sales/<int:sale_id>/', views.sale_detail, name='sale_detail'),
     path('sales/analytics/', views.sale_analytics, name='sale_analytics'),
 
-    # Plant Disease Prediction URLs
+    # Plant Disease & Pest Analysis URLs
     path('plant-disease/analyze/', views.analyze_plant_disease, name='analyze_plant_disease'),
     path('plant-disease/predictions/', views.get_plant_disease_predictions, name='get_plant_disease_predictions'),
     path('plant-disease/predictions/<int:prediction_id>/', views.get_plant_disease_prediction_detail, name='get_plant_disease_prediction_detail'),

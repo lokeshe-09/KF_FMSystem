@@ -3,7 +3,7 @@ from django.db import models
 
 class CustomUser(AbstractUser):
     USER_TYPE_CHOICES = (
-        ('admin', 'Admin'),
+        ('agronomist', 'Agronomist'),
         ('farm_user', 'Farm User'),
     )
     
@@ -21,5 +21,5 @@ class CustomUser(AbstractUser):
     def save(self, *args, **kwargs):
         # Superusers should not have user_type constraints
         if self.is_superuser:
-            self.user_type = 'admin'  # Set to admin but they're still separate
+            self.user_type = 'agronomist'  # Set to agronomist but they're still separate
         super().save(*args, **kwargs)

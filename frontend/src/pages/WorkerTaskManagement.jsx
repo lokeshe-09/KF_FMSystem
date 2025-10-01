@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
+import Breadcrumb from '../components/Breadcrumb';
 import toast from 'react-hot-toast';
 
 const WorkerTaskManagement = () => {
@@ -553,6 +554,17 @@ const WorkerTaskManagement = () => {
   return (
     <Layout>
       <div className="space-y-6">
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb
+          farmId={farmId}
+          items={[
+            {
+              label: 'Worker Tasks',
+              isActive: true
+            }
+          ]}
+        />
+
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Worker Management</h1>
           <p className="text-gray-600">Manage workers, assign tasks and track their progress</p>

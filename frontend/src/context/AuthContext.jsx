@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }) => {
     logout,
     loading,
     isAuthenticated: !!user,
-    isAdmin: user?.user_type === 'admin',
+    isAgronomist: user?.user_type === 'agronomist',
     isFarmUser: user?.user_type === 'farm_user',
     isSuperuser: user?.is_superuser,
   };

@@ -25,8 +25,8 @@ def login_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_farm_user(request):
-    if not (request.user.user_type == 'admin' or request.user.is_superuser):
-        return Response({'error': 'Only admins and superusers can create farm users'}, status=status.HTTP_403_FORBIDDEN)
+    if not (request.user.user_type == 'agronomist' or request.user.is_superuser):
+        return Response({'error': 'Only agronomists and superusers can create farm users'}, status=status.HTTP_403_FORBIDDEN)
     
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
@@ -37,13 +37,13 @@ def create_farm_user(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_farm_users(request):
-    if not (request.user.user_type == 'admin' or request.user.is_superuser):
-        return Response({'error': 'Only admins and superusers can view farm users'}, status=status.HTTP_403_FORBIDDEN)
+    if not (request.user.user_type == 'agronomist' or request.user.is_superuser):
+        return Response({'error': 'Only agronomists and superusers can view farm users'}, status=status.HTTP_403_FORBIDDEN)
     
     if request.user.is_superuser:
         farm_users = CustomUser.objects.filter(user_type='farm_user', is_superuser=False)
-    elif request.user.user_type == 'admin':
-        # Get only farm users created by this admin
+    elif request.user.user_type == 'agronomist':
+        # Get only farm users created by this agronomist
         farm_users = CustomUser.objects.filter(
             user_type='farm_user', 
             is_superuser=False,
@@ -89,14 +89,14 @@ def change_password(request):
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def manage_farm_user(request, user_id):
-    if not (request.user.user_type == 'admin' or request.user.is_superuser):
-        return Response({'error': 'Only admins and superusers can manage farm users'}, status=status.HTTP_403_FORBIDDEN)
+    if not (request.user.user_type == 'agronomist' or request.user.is_superuser):
+        return Response({'error': 'Only agronomists and superusers can manage farm users'}, status=status.HTTP_403_FORBIDDEN)
     
     try:
         if request.user.is_superuser:
             user = CustomUser.objects.get(id=user_id, user_type='farm_user')
-        elif request.user.user_type == 'admin':
-            # Admin can only manage farm users they created
+        elif request.user.user_type == 'agronomist':
+            # Agronomist can only manage farm users they created
             user = CustomUser.objects.get(
                 id=user_id, 
                 user_type='farm_user',
@@ -132,13 +132,13 @@ def manage_farm_user(request, user_id):
         user.delete()
         return Response({'message': 'Farm user deleted successfully'}, status=status.HTTP_204_NO_CONTENT)
 
-# Password reset functionality for superusers and admins
+# Password reset functionality for superusers and agronomists
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def reset_user_password(request, user_id):
-    # Only superusers and admins can reset other users' passwords
-    if not (request.user.is_superuser or request.user.user_type == 'admin'):
-        return Response({'error': 'Only superusers and admins can reset user passwords'}, status=status.HTTP_403_FORBIDDEN)
+    # Only superusers and agronomists can reset other users' passwords
+    if not (request.user.is_superuser or request.user.user_type == 'agronomist'):
+        return Response({'error': 'Only superusers and agronomists can reset user passwords'}, status=status.HTTP_403_FORBIDDEN)
     
     new_password = request.data.get('new_password')
     if not new_password:
@@ -155,12 +155,12 @@ def reset_user_password(request, user_id):
             # Superusers can reset any non-superuser password
             if user.is_superuser and user != request.user:
                 return Response({'error': 'Cannot reset another superuser\'s password'}, status=status.HTTP_403_FORBIDDEN)
-        elif request.user.user_type == 'admin':
-            # Admins can only reset farm user passwords from their own farms
+        elif request.user.user_type == 'agronomist':
+            # Agronomists can only reset farm user passwords from their own farms
             if user.user_type != 'farm_user':
-                return Response({'error': 'Admins can only reset farm user passwords'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': 'Agronomists can only reset farm user passwords'}, status=status.HTTP_403_FORBIDDEN)
             
-            # Check if the farm user was created by this admin
+            # Check if the farm user was created by this agronomist
             if user.created_by != request.user:
                 return Response({'error': 'You can only reset passwords for farm users you created'}, status=status.HTTP_403_FORBIDDEN)
         
@@ -205,38 +205,38 @@ def get_all_users(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def get_admins(request):
-    # Only superusers can view admin users
+def get_agronomists(request):
+    # Only superusers can view agronomist users
     if not request.user.is_superuser:
-        return Response({'error': 'Only superusers can view admin users'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': 'Only superusers can view agronomist users'}, status=status.HTTP_403_FORBIDDEN)
     
-    admins = CustomUser.objects.filter(user_type='admin', is_superuser=False).order_by('-date_joined')
+    agronomists = CustomUser.objects.filter(user_type='agronomist', is_superuser=False).order_by('-date_joined')
     
-    admin_data = []
-    for admin in admins:
-        admin_info = {
-            'id': admin.id,
-            'username': admin.username,
-            'email': admin.email,
-            'first_name': admin.first_name,
-            'last_name': admin.last_name,
-            'is_active': admin.is_active,
-            'date_joined': admin.date_joined,
-            'last_login': admin.last_login,
-            'created_by': admin.created_by.username if admin.created_by else None,
+    agronomist_data = []
+    for agronomist in agronomists:
+        agronomist_info = {
+            'id': agronomist.id,
+            'username': agronomist.username,
+            'email': agronomist.email,
+            'first_name': agronomist.first_name,
+            'last_name': agronomist.last_name,
+            'is_active': agronomist.is_active,
+            'date_joined': agronomist.date_joined,
+            'last_login': agronomist.last_login,
+            'created_by': agronomist.created_by.username if agronomist.created_by else None,
         }
-        admin_data.append(admin_info)
+        agronomist_data.append(agronomist_info)
     
-    return Response(admin_data)
+    return Response(agronomist_data)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def create_admin(request):
+def create_agronomist(request):
     if not request.user.is_superuser:
-        return Response({'error': 'Only superusers can create admin users'}, status=status.HTTP_403_FORBIDDEN)
+        return Response({'error': 'Only superusers can create agronomist users'}, status=status.HTTP_403_FORBIDDEN)
     
     serializer = UserRegistrationSerializer(data=request.data)
     if serializer.is_valid():
-        user = serializer.save(user_type='admin', created_by=request.user)
+        user = serializer.save(user_type='agronomist', created_by=request.user)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

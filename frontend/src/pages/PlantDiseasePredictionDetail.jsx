@@ -140,7 +140,7 @@ const PlantDiseasePredictionDetail = () => {
               onClick={() => navigate(`/farm/${farmId}/plant-disease`)}
               className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors"
             >
-              Back to Plant Disease Predictions
+              Back to Plant Disease & Pest Analysis
             </button>
           </div>
         </div>
@@ -152,24 +152,38 @@ const PlantDiseasePredictionDetail = () => {
     <Layout>
       <div className="max-w-7xl mx-auto p-6">
         {/* Header */}
+        {/* Breadcrumb Navigation */}
+        <nav className="flex items-center space-x-2 text-sm text-gray-500 mb-6">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z" />
+          </svg>
+          <button
+            onClick={() => navigate(`/farm/${farmId}/dashboard`)}
+            className="hover:text-green-600 transition-colors cursor-pointer"
+          >
+            Farm Management
+          </button>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <button
+            onClick={() => navigate(`/farm/${farmId}/plant-disease`)}
+            className="hover:text-green-600 transition-colors cursor-pointer"
+          >
+            Plant Disease & Pest Analysis
+          </button>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+          <span className="text-green-600 font-medium">Analysis Details</span>
+        </nav>
+
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => navigate(`/farm/${farmId}/plant-disease`)}
-              className="flex items-center text-gray-600 hover:text-gray-900 transition-colors"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back to Predictions
-            </button>
-            <div className="h-6 w-px bg-gray-300"></div>
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Plant Disease Analysis Details</h1>
-              <p className="text-gray-600 mt-1">
-                Analyzed on {new Date(prediction.analysis_timestamp).toLocaleDateString()} at {new Date(prediction.analysis_timestamp).toLocaleTimeString()}
-              </p>
-            </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Plant Disease & Pest Analysis Details</h1>
+            <p className="text-gray-600 mt-1">
+              Analyzed on {new Date(prediction.analysis_timestamp).toLocaleDateString()} at {new Date(prediction.analysis_timestamp).toLocaleTimeString()}
+            </p>
           </div>
           {prediction.is_resolved && (
             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">

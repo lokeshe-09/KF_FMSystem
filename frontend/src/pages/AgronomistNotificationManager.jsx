@@ -3,7 +3,7 @@ import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
-const AdminNotificationManager = () => {
+const AgronomistNotificationManager = () => {
   const [farms, setFarms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -12,7 +12,7 @@ const AdminNotificationManager = () => {
   const [notificationForm, setNotificationForm] = useState({
     title: '',
     message: '',
-    notification_type: 'admin_message',
+    notification_type: 'agronomist_message',
     priority: 'medium',
     is_farm_wide: true,
     user_ids: [],
@@ -20,15 +20,15 @@ const AdminNotificationManager = () => {
   });
 
   useEffect(() => {
-    fetchAdminData();
+    fetchAgronomistData();
   }, []);
 
-  const fetchAdminData = async () => {
+  const fetchAgronomistData = async () => {
     try {
-      const response = await farmAPI.getAdminNotifications();
+      const response = await farmAPI.getAgronomistNotifications();
       setFarms(response.data.farms || []);
     } catch (error) {
-      console.error('Error fetching admin data:', error);
+      console.error('Error fetching agronomist data:', error);
       toast.error('Failed to fetch farm data');
     } finally {
       setLoading(false);
@@ -72,14 +72,14 @@ const AdminNotificationManager = () => {
         farm_id: parseInt(selectedFarm),
       };
 
-      await farmAPI.sendAdminNotification(notificationData);
+      await farmAPI.sendAgronomistNotification(notificationData);
       toast.success('Notification sent successfully!');
       
       // Reset form
       setNotificationForm({
         title: '',
         message: '',
-        notification_type: 'admin_message',
+        notification_type: 'agronomist_message',
         priority: 'medium',
         is_farm_wide: true,
         user_ids: [],
@@ -87,7 +87,7 @@ const AdminNotificationManager = () => {
       });
       
       // Refresh data to show the new notification
-      fetchAdminData();
+      fetchAgronomistData();
     } catch (error) {
       console.error('Error sending notification:', error);
       const errorMessage = error.response?.data?.error || 'Failed to send notification';
@@ -116,7 +116,7 @@ const AdminNotificationManager = () => {
       <div className="space-y-6">
         {/* Header */}
         <div className="bg-white shadow rounded-lg p-6">
-          <h1 className="text-2xl font-bold text-gray-900">Admin Notification Manager</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Agronomist Notification Manager</h1>
           <p className="text-gray-600 mt-1">
             Send notifications to your farm users with complete farm isolation
           </p>
@@ -159,7 +159,7 @@ const AdminNotificationManager = () => {
                   onChange={handleInputChange}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value="admin_message">Admin Message</option>
+                  <option value="agronomist_message">Agronomist Message</option>
                   <option value="farm_announcement">Farm Announcement</option>
                   <option value="task_reminder">Task Reminder</option>
                   <option value="general">General</option>
@@ -356,4 +356,4 @@ const AdminNotificationManager = () => {
   );
 };
 
-export default AdminNotificationManager;
+export default AgronomistNotificationManager;

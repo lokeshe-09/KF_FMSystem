@@ -12,6 +12,6 @@ urlpatterns = [
     # Superuser-only endpoints
     path('reset-password/<int:user_id>/', views.reset_user_password, name='reset_user_password'),
     path('all-users/', views.get_all_users, name='get_all_users'),
-    path('admins/', views.get_admins, name='get_admins'),
-    path('create-admin/', views.create_admin, name='create_admin'),
+    path('agronomists/', views.get_agronomists, name='get_agronomists'),
+    path('create-agronomist/', views.create_agronomist, name='create_agronomist'),
 ]

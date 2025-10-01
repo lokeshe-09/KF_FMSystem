@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 
 const Farms = () => {
-  const { isAdmin } = useAuth();
+  const { isAgronomist } = useAuth();
   const [farms, setFarms] = useState([]);
   const [farmUsers, setFarmUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,10 +21,10 @@ const Farms = () => {
 
   useEffect(() => {
     fetchFarms();
-    if (isAdmin) {
+    if (isAgronomist) {
       fetchFarmUsers();
     }
-  }, [isAdmin]);
+  }, [isAgronomist]);
 
   const fetchFarms = async () => {
     try {
@@ -156,10 +156,10 @@ const Farms = () => {
                     </div>
                     <div>
                       <h1 className="text-3xl font-bold text-slate-900">
-                        {isAdmin ? 'Farm Management' : 'My Farms'}
+                        {isAgronomist ? 'Farm Management' : 'My Farms'}
                       </h1>
                       <p className="text-slate-600 mt-1">
-                        {isAdmin 
+                        {isAgronomist 
                           ? 'Manage farms and farm users across your organization' 
                           : 'View and access your assigned farm locations'}
                       </p>
@@ -193,7 +193,7 @@ const Farms = () => {
           </div>
 
           {/* Admin Tabs */}
-          {isAdmin && (
+          {isAgronomist && (
             <div className="mb-8">
               <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-6">
                 <div className="flex flex-wrap gap-4">
@@ -229,7 +229,7 @@ const Farms = () => {
           )}
 
           {/* Farms Grid */}
-          {(activeTab === 'farms' || !isAdmin) && (
+          {(activeTab === 'farms' || !isAgronomist) && (
             <>
               {farms.length === 0 ? (
                 <div className="text-center py-16">
@@ -241,7 +241,7 @@ const Farms = () => {
                     </div>
                     <h3 className="text-xl font-semibold text-slate-900 mb-2">No Farms Available</h3>
                     <p className="text-slate-500 text-lg mb-6">
-                      {isAdmin ? 'Get started by creating your first farm.' : 'No farms have been assigned to you yet. Contact your administrator.'}
+                      {isAgronomist ? 'Get started by creating your first farm.' : 'No farms have been assigned to you yet. Contact your agronomist.'}
                     </p>
                   </div>
                 </div>
@@ -301,7 +301,7 @@ const Farms = () => {
                           })}</span>
                         </div>
 
-                        {isAdmin && farm.owner_details && (
+                        {isAgronomist && farm.owner_details && (
                           <div className="flex items-center text-slate-600">
                             <svg className="w-4 h-4 mr-2 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -324,7 +324,7 @@ const Farms = () => {
                           View Details
                         </button>
                         
-                        {isAdmin && (
+                        {isAgronomist && (
                           <div className="flex space-x-2">
                             <button
                               onClick={() => handleEditFarm(farm)}
@@ -354,7 +354,7 @@ const Farms = () => {
             </>
           )}
 
-        {activeTab === 'users' && isAdmin && (
+        {activeTab === 'users' && isAgronomist && (
           <>
             {farmUsers.length === 0 ? (
               <div className="text-center py-12">
@@ -510,7 +510,7 @@ const Farms = () => {
 
                   {/* Right Column */}
                   <div className="space-y-6">
-                    {isAdmin && selectedFarm.owner_details && (
+                    {isAgronomist && selectedFarm.owner_details && (
                       <div className="bg-blue-50 rounded-xl p-6">
                         <h4 className="text-lg font-semibold text-slate-900 mb-4 flex items-center">
                           <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

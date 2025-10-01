@@ -71,7 +71,8 @@ class Notification(models.Model):
         ('harvest_reminder', 'Harvest Reminder'),
         ('fertigation_due', 'Fertigation Due'),
         ('fertigation_overdue', 'Fertigation Overdue'),
-        ('admin_message', 'Admin Message'),
+        ('admin_message', 'Agronomist Message'),  # Legacy support
+        ('agronomist_message', 'Agronomist Message'),
         ('farm_announcement', 'Farm Announcement'),
         ('task_reminder', 'Task Reminder'),
         ('general', 'General'),
@@ -506,7 +507,7 @@ class IssueReport(models.Model):
     
     farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='issue_reports', null=True, blank=True)
     farm_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='issue_reports')
-    admin_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_issues', null=True, blank=True)
+    agronomist_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assigned_issues', null=True, blank=True)
     crop_zone = models.CharField(max_length=200, blank=True, null=True)
     issue_type = models.CharField(max_length=50, choices=ISSUE_TYPE_CHOICES)
     description = models.TextField()
@@ -522,7 +523,7 @@ class IssueReport(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['farm_user', '-created_at']),
-            models.Index(fields=['admin_user']),
+            models.Index(fields=['agronomist_user']),
             models.Index(fields=['status']),
             models.Index(fields=['severity']),
         ]
@@ -531,9 +532,9 @@ class IssueReport(models.Model):
         return f"Issue #{self.id} - {self.get_issue_type_display()} - {self.severity}"
 
 
-class AdminNotification(models.Model):
+class AgronomistNotification(models.Model):
     """
-    Separate notification model for admins that persists independently
+    Separate notification model for agronomists that persists independently
     """
     NOTIFICATION_TYPES = (
         ('daily_task', 'Daily Task Submission'),
@@ -544,13 +545,13 @@ class AdminNotification(models.Model):
         ('general', 'General'),
     )
     
-    admin_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='admin_notifications')
+    agronomist_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='agronomist_notifications')
     title = models.CharField(max_length=200)
     message = models.TextField()
     notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES, default='general')
     
     # Source information (who triggered this notification)
-    source_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='triggered_admin_notifications')
+    source_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='triggered_agronomist_notifications')
     source_farm = models.ForeignKey(Farm, on_delete=models.SET_NULL, null=True, blank=True)
     
     # Reference to original objects
@@ -563,13 +564,13 @@ class AdminNotification(models.Model):
     class Meta:
         ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['admin_user', '-created_at']),
+            models.Index(fields=['agronomist_user', '-created_at']),
             models.Index(fields=['notification_type']),
             models.Index(fields=['is_read']),
         ]
     
     def __str__(self):
-        return f"Admin Notification: {self.title} - {self.admin_user.username}"
+        return f"Agronomist Notification: {self.title} - {self.agronomist_user.username}"
 
 class Expenditure(models.Model):
     CATEGORY_CHOICES = (
@@ -841,6 +842,51 @@ class PlantDiseasePrediction(models.Model):
             return 'medium'
         else:
             return 'low'
+
+class FarmTask(models.Model):
+    """
+    Tasks that farm users can create and assign to themselves for farm management.
+    This is separate from DailyTask (routine operations) and WorkerTask (tasks assigned to workers).
+    Ensures complete data isolation - farm users can only see/manage tasks for their assigned farms.
+    """
+    PRIORITY_CHOICES = (
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    )
+
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+    )
+
+    farm = models.ForeignKey(Farm, on_delete=models.CASCADE, related_name='farm_tasks')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='farm_tasks')
+    title = models.CharField(max_length=300, help_text="Brief title of the task")
+    description = models.TextField(blank=True, null=True, help_text="Detailed description of the task")
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='medium')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    due_date = models.DateField(blank=True, null=True, help_text="Expected completion date")
+    completed_at = models.DateTimeField(blank=True, null=True, help_text="When the task was marked as completed")
+    notes = models.TextField(blank=True, null=True, help_text="Additional notes or comments")
+    image_data = models.TextField(blank=True, null=True, help_text="Base64 encoded image evidence")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['farm', 'user', '-created_at']),
+            models.Index(fields=['user', 'status']),
+            models.Index(fields=['farm', 'status']),
+            models.Index(fields=['due_date']),
+            models.Index(fields=['-created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.title} - {self.farm.name} - {self.user.username}"
 
 @receiver(post_delete, sender=Farm)
 def delete_farm_users(sender, instance, **kwargs):

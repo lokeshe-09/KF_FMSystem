@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import Breadcrumb from '../components/Breadcrumb';
 import { farmAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -118,36 +119,56 @@ const SpraySchedule = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!formData.farm) {
       toast.error('Please select a farm');
       return;
     }
 
-    if (!formData.crop_zone) {
-      toast.error('Please enter crop zone');
-      return;
-    }
+    // Validate all required fields
+    const requiredFields = [
+      { field: 'crop_zone', message: 'Please enter crop zone' },
+      { field: 'product_used', message: 'Please enter product used' },
+      { field: 'worker_name', message: 'Please enter worker name' },
+      { field: 'dose_concentration', message: 'Please enter dose/concentration' },
+      { field: 'phi_log', message: 'Please enter PHI days' },
+      { field: 'reason', message: 'Please select a reason' }
+    ];
 
-    if (!formData.product_used) {
-      toast.error('Please enter product used');
-      return;
-    }
-
-    if (!formData.worker_name) {
-      toast.error('Please enter worker name');
-      return;
+    for (const { field, message } of requiredFields) {
+      const value = formData[field];
+      if (!value || (typeof value === 'string' && value.trim() === '')) {
+        toast.error(message);
+        return;
+      }
     }
 
     try {
       const imagesData = capturedImages.map(img => img.data);
-      
+
+      // Clean and prepare submit data
       const submitData = {
-        ...formData,
+        crop_zone: formData.crop_zone.trim(),
+        date_time: formData.date_time,
+        product_used: formData.product_used.trim(),
+        dose_concentration: formData.dose_concentration.trim(),
+        reason: formData.reason,
         phi_log: parseInt(formData.phi_log) || 0,
+        worker_name: formData.worker_name.trim(),
+        next_spray_reminder: formData.next_spray_reminder || null,
+        crop_stage: formData.crop_stage || null,
+        weather_conditions: formData.weather_conditions?.trim() || null,
+        application_method: formData.application_method?.trim() || null,
+        equipment_used: formData.equipment_used?.trim() || null,
         area_covered: formData.area_covered ? parseFloat(formData.area_covered) : null,
+        notes: formData.notes?.trim() || null,
         image_data: imagesData.length > 0 ? imagesData : null
       };
+
+      // Add farm field only for non-farm-specific context (legacy endpoint)
+      if (!farmId) {
+        submitData.farm = formData.farm;
+      }
 
       if (editMode && selectedSchedule) {
         if (farmId) {
@@ -164,7 +185,7 @@ const SpraySchedule = () => {
         }
         toast.success('Spray schedule created successfully!');
       }
-      
+
       stopCamera();
       setShowForm(false);
       setEditMode(false);
@@ -172,7 +193,25 @@ const SpraySchedule = () => {
       fetchSchedules();
     } catch (error) {
       console.error('Error saving spray schedule:', error);
-      toast.error('Failed to save spray schedule');
+
+      // Handle validation errors from backend
+      if (error.response?.data?.details) {
+        const validationErrors = error.response.data.details;
+        // Show specific field errors
+        Object.keys(validationErrors).forEach(field => {
+          const errorMsg = Array.isArray(validationErrors[field])
+            ? validationErrors[field][0]
+            : validationErrors[field];
+          toast.error(`${field}: ${errorMsg}`);
+        });
+      } else {
+        // Show general error message
+        const errorMessage = error.response?.data?.message ||
+                            error.response?.data?.error ||
+                            error.message ||
+                            'Failed to save spray schedule';
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -446,6 +485,17 @@ const SpraySchedule = () => {
   return (
     <Layout>
       <div className="space-y-6">
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb
+          farmId={farmId}
+          items={[
+            {
+              label: 'Spray Schedule',
+              isActive: true
+            }
+          ]}
+        />
+
         {/* Header */}
         <div className="card p-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-4 sm:space-y-0">
@@ -942,34 +992,33 @@ const SpraySchedule = () => {
                       )}
                     </div>
                   </div>
-                </form>
-              </div>
 
-              
-              {/* Sticky Footer */}
-              <div className="sticky bottom-0 bg-white border-t border-slate-200/60 px-6 py-4">
-                <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      setEditMode(false);
-                      stopCamera();
-                    }}
-                    className="w-full sm:w-auto px-6 py-3 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-all duration-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-full text-sm font-medium hover:from-emerald-600 hover:to-teal-700 hover:shadow-lg hover:shadow-emerald-500/25 transform hover:-translate-y-0.5 transition-all duration-200"
-                  >
-                    <div className="flex items-center justify-center space-x-2">
-                      <span>🌿</span>
-                      <span>{editMode ? 'Update Schedule' : 'Create Schedule'}</span>
+                  {/* Form Buttons - Moved inside form */}
+                  <div className="sticky bottom-0 bg-white border-t border-slate-200/60 px-6 py-4 -mx-4 sm:-mx-6">
+                    <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowForm(false);
+                          setEditMode(false);
+                          stopCamera();
+                        }}
+                        className="w-full sm:w-auto px-6 py-3 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-full text-sm font-medium hover:from-emerald-600 hover:to-teal-700 hover:shadow-lg hover:shadow-emerald-500/25 transform hover:-translate-y-0.5 transition-all duration-200"
+                      >
+                        <div className="flex items-center justify-center space-x-2">
+                          <span>🌿</span>
+                          <span>{editMode ? 'Update Schedule' : 'Create Schedule'}</span>
+                        </div>
+                      </button>
                     </div>
-                  </button>
-                </div>
+                  </div>
+                </form>
               </div>
             </div>
           </div>

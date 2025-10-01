@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import Breadcrumb from '../components/Breadcrumb';
 import { farmAPI } from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -259,16 +260,78 @@ const Fertigation = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    const imagesData = capturedImages.map(img => img.data);
-    
-    const data = {
-      ...formData,
-      nutrients_used: nutrients.filter(n => n.product_name && n.quantity),
-      image_data: imagesData.length > 0 ? imagesData : null
-    };
+
+    // Validate required fields
+    if (!formData.farm) {
+      toast.error('Please select a farm');
+      return;
+    }
+
+    if (!formData.crop_zone_name || formData.crop_zone_name.trim() === '') {
+      toast.error('Please enter crop zone name');
+      return;
+    }
+
+    if (!formData.operator_name || formData.operator_name.trim() === '') {
+      toast.error('Please enter operator name');
+      return;
+    }
+
+    if (formData.status === 'completed') {
+      if (!formData.water_volume || parseFloat(formData.water_volume) <= 0) {
+        toast.error('Please enter valid water volume');
+        return;
+      }
+
+      // Validate EC values
+      const ecBefore = parseFloat(formData.ec_before);
+      const ecAfter = parseFloat(formData.ec_after);
+      if (isNaN(ecBefore) || ecBefore < 0) {
+        toast.error('Please enter valid EC before value');
+        return;
+      }
+      if (isNaN(ecAfter) || ecAfter < 0) {
+        toast.error('Please enter valid EC after value');
+        return;
+      }
+
+      // Validate pH values
+      const phBefore = parseFloat(formData.ph_before);
+      const phAfter = parseFloat(formData.ph_after);
+      if (isNaN(phBefore) || phBefore < 0 || phBefore > 14) {
+        toast.error('Please enter valid pH before value (0-14)');
+        return;
+      }
+      if (isNaN(phAfter) || phAfter < 0 || phAfter > 14) {
+        toast.error('Please enter valid pH after value (0-14)');
+        return;
+      }
+    }
 
     try {
+      const imagesData = capturedImages.map(img => img.data);
+
+      const data = {
+        crop_zone_name: formData.crop_zone_name.trim(),
+        date_time: formData.date_time,
+        operator_name: formData.operator_name.trim(),
+        remarks: formData.remarks?.trim() || '',
+        ec_before: parseFloat(formData.ec_before) || 0,
+        ph_before: parseFloat(formData.ph_before) || 7,
+        ec_after: parseFloat(formData.ec_after) || 0,
+        ph_after: parseFloat(formData.ph_after) || 7,
+        water_volume: parseFloat(formData.water_volume) || 0,
+        crop_stage: formData.crop_stage || null,
+        status: formData.status,
+        nutrients_used: nutrients.filter(n => n.product_name && n.quantity),
+        image_data: imagesData.length > 0 ? imagesData : null
+      };
+
+      // Add farm field only for non-farm-specific context (legacy endpoint)
+      if (!farmId) {
+        data.farm = formData.farm;
+      }
+
       if (editingFertigation) {
         if (farmId) {
           await farmAPI.updateFarmFertigation(farmId, editingFertigation.id, data);
@@ -284,7 +347,7 @@ const Fertigation = () => {
         }
         toast.success('Fertigation logged successfully!');
       }
-      
+
       resetForm();
       setShowForm(false);
       setShowCamera(false);
@@ -293,7 +356,23 @@ const Fertigation = () => {
       fetchAnalytics();
     } catch (error) {
       console.error('Error saving fertigation:', error);
-      toast.error('Failed to save fertigation');
+
+      // Handle validation errors from backend
+      if (error.response?.data?.details) {
+        const validationErrors = error.response.data.details;
+        Object.keys(validationErrors).forEach(field => {
+          const errorMsg = Array.isArray(validationErrors[field])
+            ? validationErrors[field][0]
+            : validationErrors[field];
+          toast.error(`${field}: ${errorMsg}`);
+        });
+      } else {
+        const errorMessage = error.response?.data?.message ||
+                            error.response?.data?.error ||
+                            error.message ||
+                            'Failed to save fertigation';
+        toast.error(errorMessage);
+      }
     }
   };
 
@@ -469,7 +548,18 @@ const Fertigation = () => {
     <Layout>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-green-50 to-emerald-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          
+
+          {/* Breadcrumb Navigation */}
+          <Breadcrumb
+            farmId={farmId}
+            items={[
+              {
+                label: 'Fertigation',
+                isActive: true
+              }
+            ]}
+          />
+
           {/* Header Section */}
           <div className="mb-8">
             <div className="bg-white rounded-2xl shadow-lg border border-slate-200/60 p-8">
@@ -1456,30 +1546,29 @@ const Fertigation = () => {
                       )}
                     </div>
                   </div>
-                </form>
-              </div>
 
-              
-              {/* Sticky Footer */}
-              <div className="sticky bottom-0 bg-white border-t border-slate-200/60 px-6 py-4">
-                <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => { setShowForm(false); resetForm(); }}
-                    className="w-full sm:w-auto px-6 py-3 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-all duration-200"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-full text-sm font-medium hover:from-blue-600 hover:to-cyan-700 hover:shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5 transition-all duration-200"
-                  >
-                    <div className="flex items-center justify-center space-x-2">
-                      <span>💧</span>
-                      <span>{editingFertigation ? 'Update Record' : 'Log Fertigation'}</span>
+                  {/* Form Buttons - Moved inside form */}
+                  <div className="sticky bottom-0 bg-white border-t border-slate-200/60 px-6 py-4 -mx-6">
+                    <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => { setShowForm(false); resetForm(); }}
+                        className="w-full sm:w-auto px-6 py-3 bg-slate-100 text-slate-700 rounded-full text-sm font-medium hover:bg-slate-200 transition-all duration-200"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 text-white rounded-full text-sm font-medium hover:from-blue-600 hover:to-cyan-700 hover:shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5 transition-all duration-200"
+                      >
+                        <div className="flex items-center justify-center space-x-2">
+                          <span>💧</span>
+                          <span>{editingFertigation ? 'Update Record' : 'Log Fertigation'}</span>
+                        </div>
+                      </button>
                     </div>
-                  </button>
-                </div>
+                  </div>
+                </form>
               </div>
             </div>
           </div>

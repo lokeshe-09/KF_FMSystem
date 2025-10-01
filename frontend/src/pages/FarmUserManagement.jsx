@@ -5,7 +5,7 @@ import Layout from '../components/Layout';
 import toast from 'react-hot-toast';
 
 const FarmUserManagement = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAgronomist } = useAuth();
   const [farmUsers, setFarmUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -21,10 +21,10 @@ const FarmUserManagement = () => {
   });
 
   useEffect(() => {
-    if (isAdmin) {
+    if (isAgronomist) {
       fetchFarmUsers();
     }
-  }, [isAdmin]);
+  }, [isAgronomist]);
 
   const fetchFarmUsers = async () => {
     try {
@@ -105,12 +105,12 @@ const FarmUserManagement = () => {
     });
   };
 
-  if (!isAdmin) {
+  if (!isAgronomist) {
     return (
       <Layout>
         <div className="text-center py-12">
           <h3 className="text-lg font-semibold text-slate-900 mb-2">Access Denied</h3>
-          <p className="text-slate-500">Only admins can access this page.</p>
+          <p className="text-slate-500">Only agronomists can access this page.</p>
         </div>
       </Layout>
     );

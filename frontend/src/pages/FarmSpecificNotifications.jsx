@@ -232,7 +232,7 @@ const FarmSpecificNotifications = () => {
             {[
               { key: 'all', label: 'All', count: notifications.length },
               { key: 'unread', label: 'Unread', count: unreadCount },
-              { key: 'admin', label: 'Admin Messages', count: notifications.filter(n => n.notification_type === 'admin_message' || n.notification_type === 'farm_announcement').length },
+              { key: 'admin', label: 'Agronomist Messages', count: notifications.filter(n => n.notification_type === 'admin_message' || n.notification_type === 'farm_announcement').length },
               { key: 'tasks', label: 'Tasks', count: notifications.filter(n => n.notification_type === 'task_reminder' || n.notification_type === 'daily_task').length },
               { key: 'high', label: 'High Priority', count: notifications.filter(n => n.priority === 'high').length },
             ].map((tab) => (
@@ -350,7 +350,7 @@ const FarmSpecificNotifications = () => {
               <h3 className="text-sm font-medium text-blue-800">Farm-Specific Notifications</h3>
               <div className="mt-2 text-sm text-blue-700">
                 <p>
-                  These notifications are specifically for this farm only. You'll see personal messages from your admin and farm-wide announcements.
+                  These notifications are specifically for this farm only. You'll see personal messages from your agronomist and farm-wide announcements.
                 </p>
               </div>
             </div>

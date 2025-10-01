@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useParams } from 'react-router-dom';
 import { farmAPI } from '../services/api';
 import Layout from '../components/Layout';
+import Breadcrumb from '../components/Breadcrumb';
 import useWebSocket from '../hooks/useWebSocket';
 import toast from 'react-hot-toast';
 
@@ -1227,6 +1228,17 @@ Pepper,Bell,PEP001,vegetative,2024-12-15,2025-03-15,1,Sample pepper crop`;
   return (
     <Layout>
       <div className={`space-y-8 ${isMobile ? 'px-2' : ''}`}>
+        {/* Breadcrumb Navigation */}
+        <Breadcrumb
+          farmId={farmId}
+          items={[
+            {
+              label: 'Crop Stages',
+              isActive: true
+            }
+          ]}
+        />
+
         {/* Header Section */}
         <div className="card p-8">
           <div className="flex items-center space-x-4">

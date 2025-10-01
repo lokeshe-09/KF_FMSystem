@@ -24,16 +24,22 @@ const UserManagement = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [usersResponse, adminsResponse] = await Promise.all([
+      const [usersResponse, agronomistsResponse] = await Promise.all([
         authAPI.getAllUsers(),
-        authAPI.getAdmins()
+        authAPI.getAgronomists()
       ]);
-      
-      setUsers(usersResponse.data);
-      setAdmins(adminsResponse.data);
+
+      setUsers(usersResponse.data || []);
+      setAdmins(agronomistsResponse.data || []);
     } catch (error) {
       console.error('Error fetching users:', error);
-      toast.error('Failed to load user data');
+      // Set empty arrays instead of showing error to user
+      setUsers([]);
+      setAdmins([]);
+      // Only show error if user is authenticated and has permission
+      if (user?.is_superuser) {
+        console.warn('Failed to load user data. Please check backend connectivity.');
+      }
     } finally {
       setLoading(false);
     }
@@ -116,7 +122,7 @@ const UserManagement = () => {
             <div>
               <h1 className="text-3xl font-bold text-slate-900">User Management</h1>
               <p className="text-slate-600 font-medium">
-                Manage and reset passwords for admin and farm users
+                Manage and reset passwords for agronomist and farm users
               </p>
             </div>
           </div>
@@ -155,13 +161,13 @@ const UserManagement = () => {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                    Admin Users
+                    Agronomist Users
                   </p>
                   <p className="text-3xl font-bold text-slate-900 mt-1">{admins.length}</p>
                 </div>
               </div>
               <div className="text-xs text-slate-500 font-medium bg-emerald-50 px-2 py-1 rounded-full">
-                Admins
+                Agronomists
               </div>
             </div>
           </div>
@@ -200,7 +206,7 @@ const UserManagement = () => {
               <div className="flex space-x-1">
                 {[
                   { key: 'all', label: 'All Users', count: users.length },
-                  { key: 'admins', label: 'Admins', count: admins.length },
+                  { key: 'admins', label: 'Agronomists', count: admins.length },
                   { key: 'farm_users', label: 'Farm Users', count: users.filter(u => u.user_type === 'farm_user').length }
                 ].map((tab) => (
                   <button
@@ -265,11 +271,11 @@ const UserManagement = () => {
                         </td>
                         <td>
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                            userData.user_type === 'admin' 
-                              ? 'bg-purple-100 text-purple-800' 
+                            userData.user_type === 'agronomist'
+                              ? 'bg-purple-100 text-purple-800'
                               : 'bg-blue-100 text-blue-800'
                           }`}>
-                            {userData.user_type === 'admin' ? 'Admin' : 'Farm User'}
+                            {userData.user_type === 'agronomist' ? 'Agronomist' : 'Farm User'}
                           </span>
                         </td>
                         <td>

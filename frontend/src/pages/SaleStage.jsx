@@ -56,22 +56,22 @@ const SaleStage = () => {
 
   // Payment status options
   const paymentStatusOptions = [
-    { value: 'pending', label: '⏳ Pending', color: 'text-yellow-600 bg-yellow-100' },
-    { value: 'partial', label: '⏰ Partial', color: 'text-blue-600 bg-blue-100' },
-    { value: 'completed', label: '✅ Completed', color: 'text-green-600 bg-green-100' },
-    { value: 'overdue', label: '❗ Overdue', color: 'text-red-600 bg-red-100' },
+    { value: 'pending', label: 'Pending', color: 'text-yellow-600 bg-yellow-100' },
+    { value: 'partial', label: 'Partial', color: 'text-blue-600 bg-blue-100' },
+    { value: 'completed', label: 'Completed', color: 'text-green-600 bg-green-100' },
+    { value: 'overdue', label: 'Overdue', color: 'text-red-600 bg-red-100' },
   ];
 
   // Unit options
   const unitOptions = [
-    { value: 'kg', label: '🏋️ Kilogram (kg)' },
-    { value: 'gram', label: '⚖️ Gram (g)' },
-    { value: 'ton', label: '🚛 Ton' },
-    { value: 'piece', label: '🔢 Piece' },
-    { value: 'box', label: '📦 Box' },
-    { value: 'bag', label: '👜 Bag' },
-    { value: 'crate', label: '📦 Crate' },
-    { value: 'bunch', label: '🍇 Bunch' },
+    { value: 'kg', label: 'Kilogram (kg)' },
+    { value: 'gram', label: 'Gram (g)' },
+    { value: 'ton', label: 'Ton' },
+    { value: 'piece', label: 'Piece' },
+    { value: 'box', label: 'Box' },
+    { value: 'bag', label: 'Bag' },
+    { value: 'crate', label: 'Crate' },
+    { value: 'bunch', label: 'Bunch' },
   ];
 
   useEffect(() => {
@@ -178,7 +178,8 @@ const SaleStage = () => {
       toast.error('Please select sale date');
       return;
     }
-    if (!saleForm.farm) {
+    // Only validate farm selection if not in farm mode (where farm is determined by URL)
+    if (!inFarmMode && !saleForm.farm) {
       toast.error('Please select a farm');
       return;
     }
@@ -211,6 +212,11 @@ const SaleStage = () => {
         invoice_number: saleForm.invoice_number || null,
         payment_due_date: saleForm.payment_due_date || null,
       };
+
+      // In farm mode, remove the farm field since it's determined by URL parameter
+      if (inFarmMode) {
+        delete cleanedData.farm;
+      }
       
       let response;
       if (inFarmMode) {
@@ -240,7 +246,13 @@ const SaleStage = () => {
   const handleUpdateSale = async () => {
     try {
       setLoading(true);
-      await farmAPI.updateSale(editingSale.id, saleForm);
+      if (inFarmMode && farmId) {
+        // Use farm-specific API for complete database isolation
+        await farmAPI.updateFarmSale(farmId, editingSale.id, saleForm);
+      } else {
+        // Use legacy API for backward compatibility
+        await farmAPI.updateSale(editingSale.id, saleForm);
+      }
       toast.success('Sale updated successfully');
       setShowEditModal(false);
       setEditingSale(null);
@@ -409,82 +421,105 @@ const SaleStage = () => {
           </div>
         )}
 
-        {/* Filters */}
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200/60 p-6">
-          <h2 className="text-lg font-semibold text-slate-800 mb-4">Filter Sales</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <select
-              value={filters.payment_status}
-              onChange={(e) => fetchSales({ ...filters, payment_status: e.target.value })}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">All Payment Status</option>
-              {paymentStatusOptions.map(option => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
+        {/* Professional Filters */}
+        <div className="bg-white rounded-lg border border-slate-100 shadow-sm p-6">
+          <h2 className="text-base font-medium text-slate-900 mb-5">Filter Sales</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mb-4">
+            {/* Payment Status Dropdown */}
+            <div className="min-w-0">
+              <label className="block text-xs font-medium text-slate-600 mb-2">Payment Status</label>
+              <select
+                value={filters.payment_status}
+                onChange={(e) => fetchSales({ ...filters, payment_status: e.target.value })}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              >
+                <option value="">All Statuses</option>
+                {paymentStatusOptions.map(option => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
 
-            <input
-              type="text"
-              placeholder="Crop Name"
-              value={filters.crop_name}
-              onChange={(e) => setFilters({ ...filters, crop_name: e.target.value })}
-              onKeyPress={(e) => e.key === 'Enter' && fetchSales()}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+            {/* Crop Name */}
+            <div className="min-w-0">
+              <label className="block text-xs font-medium text-slate-600 mb-2">Crop Name</label>
+              <input
+                type="text"
+                placeholder="Search crops..."
+                value={filters.crop_name}
+                onChange={(e) => setFilters({ ...filters, crop_name: e.target.value })}
+                onKeyPress={(e) => e.key === 'Enter' && fetchSales()}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              />
+            </div>
 
-            <input
-              type="text"
-              placeholder="Buyer Name"
-              value={filters.buyer_name}
-              onChange={(e) => setFilters({ ...filters, buyer_name: e.target.value })}
-              onKeyPress={(e) => e.key === 'Enter' && fetchSales()}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+            {/* Buyer Name */}
+            <div className="min-w-0">
+              <label className="block text-xs font-medium text-slate-600 mb-2">Buyer Name</label>
+              <input
+                type="text"
+                placeholder="Search buyers..."
+                value={filters.buyer_name}
+                onChange={(e) => setFilters({ ...filters, buyer_name: e.target.value })}
+                onKeyPress={(e) => e.key === 'Enter' && fetchSales()}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              />
+            </div>
 
-            <input
-              type="date"
-              placeholder="From Date"
-              value={filters.date_from}
-              onChange={(e) => fetchSales({ ...filters, date_from: e.target.value })}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+            {/* From Date */}
+            <div className="min-w-0">
+              <label className="block text-xs font-medium text-slate-600 mb-2">From Date</label>
+              <input
+                type="date"
+                value={filters.date_from}
+                onChange={(e) => fetchSales({ ...filters, date_from: e.target.value })}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              />
+            </div>
 
-            <input
-              type="date"
-              placeholder="To Date"
-              value={filters.date_to}
-              onChange={(e) => fetchSales({ ...filters, date_to: e.target.value })}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            />
+            {/* To Date */}
+            <div className="min-w-0">
+              <label className="block text-xs font-medium text-slate-600 mb-2">To Date</label>
+              <input
+                type="date"
+                value={filters.date_to}
+                onChange={(e) => fetchSales({ ...filters, date_to: e.target.value })}
+                className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+              />
+            </div>
 
             {/* Hide farm filter in farm-specific mode - complete database isolation */}
             {!inFarmMode && (
-              <select
-                value={filters.farm}
-                onChange={(e) => fetchSales({ ...filters, farm: e.target.value })}
-                className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              >
-                <option value="">All Farms</option>
-                {farms.map(farm => (
-                  <option key={farm.id} value={farm.id}>{farm.name}</option>
-                ))}
-              </select>
+              <div className="min-w-0">
+                <label className="block text-xs font-medium text-slate-600 mb-2">Farm</label>
+                <select
+                  value={filters.farm}
+                  onChange={(e) => fetchSales({ ...filters, farm: e.target.value })}
+                  className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-md text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400 transition-colors"
+                >
+                  <option value="">All Farms</option>
+                  {farms.map(farm => (
+                    <option key={farm.id} value={farm.id}>{farm.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
           
-          <div className="flex gap-4 mt-4">
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-3 pt-2">
             <button
               onClick={() => fetchSales()}
-              className="bg-emerald-500 text-white px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors"
+              className="px-5 py-2.5 bg-slate-800 text-white text-sm font-medium rounded-md hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 transition-colors"
+              disabled={salesLoading}
             >
-              Apply Filters
+              {salesLoading ? 'Filtering...' : 'Apply Filters'}
             </button>
             <button
               onClick={clearFilters}
-              className="bg-slate-500 text-white px-4 py-2 rounded-lg hover:bg-slate-600 transition-colors"
+              className="px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-medium rounded-md hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 transition-colors"
             >
-              Clear Filters
+              Clear
             </button>
           </div>
         </div>

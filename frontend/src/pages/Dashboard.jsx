@@ -6,13 +6,13 @@ import useWebSocket from '../hooks/useWebSocket';
 import toast from 'react-hot-toast';
 
 const Dashboard = () => {
-  const { user, isAdmin, isSuperuser } = useAuth();
+  const { user, isAgronomist, isSuperuser } = useAuth();
   const [farms, setFarms] = useState([]);
   const [farmUsers, setFarmUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateAdminModal, setShowCreateAdminModal] = useState(false);
+  const [showCreateAgronomistModal, setShowCreateAgronomistModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [adminFormData, setAdminFormData] = useState({
+  const [agronomistFormData, setAgronomistFormData] = useState({
     username: '',
     email: '',
     first_name: '',
@@ -20,7 +20,7 @@ const Dashboard = () => {
     password: '',
     phone_number: ''
   });
-  const [adminFormErrors, setAdminFormErrors] = useState({});
+  const [agronomistFormErrors, setAgronomistFormErrors] = useState({});
   const [stats, setStats] = useState({
     totalFarms: 0,
     totalUsers: 0,
@@ -36,8 +36,8 @@ const Dashboard = () => {
     });
   }, []);
 
-  // WebSocket connection for admin users
-  const { connectionStatus } = useWebSocket((isAdmin || isSuperuser) ? handleDashboardNotification : null);
+  // WebSocket connection for agronomist users
+  const { connectionStatus } = useWebSocket((isAgronomist || isSuperuser) ? handleDashboardNotification : null);
 
   useEffect(() => {
     fetchData();
@@ -46,63 +46,70 @@ const Dashboard = () => {
   const fetchData = async () => {
     try {
       const farmResponse = await farmAPI.getFarms();
-      setFarms(farmResponse.data);
-      
-      if (isAdmin) {
+      setFarms(farmResponse.data || []);
+
+      if (isAgronomist) {
         const userResponse = await authAPI.getFarmUsers();
-        setFarmUsers(userResponse.data);
-        
+        setFarmUsers(userResponse.data || []);
+
         setStats({
-          totalFarms: farmResponse.data.length,
-          totalUsers: userResponse.data.length,
-          totalAcres: farmResponse.data.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0)
+          totalFarms: farmResponse.data?.length || 0,
+          totalUsers: userResponse.data?.length || 0,
+          totalAcres: farmResponse.data?.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0) || 0
         });
       } else if (isSuperuser) {
         const userResponse = await authAPI.getAllUsers();
-        setFarmUsers(userResponse.data);
-        
+        setFarmUsers(userResponse.data || []);
+
         setStats({
-          totalFarms: farmResponse.data.length,
-          totalUsers: userResponse.data.length,
-          totalAcres: farmResponse.data.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0)
+          totalFarms: farmResponse.data?.length || 0,
+          totalUsers: userResponse.data?.length || 0,
+          totalAcres: farmResponse.data?.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0) || 0
         });
       } else {
         setStats({
-          totalFarms: farmResponse.data.length,
+          totalFarms: farmResponse.data?.length || 0,
           totalUsers: 0,
-          totalAcres: farmResponse.data.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0)
+          totalAcres: farmResponse.data?.reduce((sum, farm) => sum + parseFloat(farm.size_in_acres || 0), 0) || 0
         });
       }
     } catch (error) {
-      toast.error('Failed to fetch data');
       console.error('Error fetching data:', error);
+      // Fail gracefully - set empty data instead of showing error to user
+      setFarms([]);
+      setFarmUsers([]);
+      setStats({
+        totalFarms: 0,
+        totalUsers: 0,
+        totalAcres: 0
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateAdmin = async (e) => {
+  const handleCreateAgronomist = async (e) => {
     e.preventDefault();
-    setAdminFormErrors({});
+    setAgronomistFormErrors({});
     
     // Client-side validation
     const errors = {};
-    if (!adminFormData.username.trim()) errors.username = 'Username is required';
-    if (!adminFormData.email.trim()) errors.email = 'Email is required';
-    if (!adminFormData.password.trim()) errors.password = 'Password is required';
-    else if (adminFormData.password.length < 8) errors.password = 'Password must be at least 8 characters';
+    if (!agronomistFormData.username.trim()) errors.username = 'Username is required';
+    if (!agronomistFormData.email.trim()) errors.email = 'Email is required';
+    if (!agronomistFormData.password.trim()) errors.password = 'Password is required';
+    else if (agronomistFormData.password.length < 8) errors.password = 'Password must be at least 8 characters';
 
     if (Object.keys(errors).length > 0) {
-      setAdminFormErrors(errors);
+      setAgronomistFormErrors(errors);
       return;
     }
 
     try {
-      await authAPI.createAdmin(adminFormData);
-      toast.success('🎉 Admin created successfully!');
-      setShowCreateAdminModal(false);
+      await authAPI.createAgronomist(agronomistFormData);
+      toast.success('🎉 Agronomist created successfully!');
+      setShowCreateAgronomistModal(false);
       setShowPassword(false);
-      setAdminFormData({
+      setAgronomistFormData({
         username: '',
         email: '',
         first_name: '',
@@ -110,21 +117,21 @@ const Dashboard = () => {
         password: '',
         phone_number: ''
       });
-      setAdminFormErrors({});
+      setAgronomistFormErrors({});
       fetchData(); // Refresh data
     } catch (error) {
-      console.error('Error creating admin:', error);
+      console.error('Error creating agronomist:', error);
       if (error.response?.data) {
-        setAdminFormErrors(error.response.data);
+        setAgronomistFormErrors(error.response.data);
       } else {
-        toast.error('Failed to create admin. Please try again.');
+        toast.error('Failed to create agronomist. Please try again.');
       }
     }
   };
 
-  const handleAdminFormChange = (e) => {
+  const handleAgronomistFormChange = (e) => {
     const { name, value } = e.target;
-    setAdminFormData(prev => ({
+    setAgronomistFormData(prev => ({
       ...prev,
       [name]: value
     }));
@@ -145,192 +152,275 @@ const Dashboard = () => {
 
   return (
     <Layout>
-      <div className="space-y-8">
-        {/* Welcome Section */}
-        <div className="card p-8">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            <div className="space-y-2">
-              <h1 className="text-3xl font-bold text-slate-900">
-                Welcome back, {user.first_name || user.username}! 👋
-              </h1>
-              <p className="text-lg text-slate-600 font-medium">
-                {isSuperuser ? 'Superuser Dashboard - Full System Access' : 
-                 user.user_type === 'admin' ? 'System Administrator Dashboard' : 'Farm User Dashboard'}
-              </p>
-              {isSuperuser && (
-                <div className="flex items-center space-x-2 text-purple-600">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm font-medium">Superuser privileges - Full system control</span>
-                </div>
-              )}
-              {isAdmin && !isSuperuser && (
-                <div className="flex items-center space-x-2 text-emerald-600">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm font-medium">Administrator privileges active</span>
-                </div>
-              )}
-              {!isAdmin && !isSuperuser && (
-                <div className="flex items-center space-x-2 text-blue-600">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  <span className="text-sm font-medium">Manage your assigned farms</span>
-                </div>
-              )}
-            </div>
-            <div className="text-left lg:text-right">
-              <div className="inline-flex items-center space-x-3 bg-gradient-to-r from-slate-50 to-blue-50 px-4 py-3 rounded-2xl border border-slate-200/60">
-                <svg className="w-5 h-5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h3a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h3z" />
-                </svg>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100">
+        <div className="space-y-8">
+          {/* Welcome Section */}
+          <div className="group bg-gradient-to-r from-white/90 to-slate-50/80 backdrop-blur-sm shadow-xl rounded-2xl border border-slate-200/60 hover:border-slate-300/80 p-8 transition-all duration-300">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-6 lg:space-y-0">
+              <div className="flex-1 space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-slate-700">
-                    {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {new Date().toLocaleDateString('en-US', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric'
-                    })}
-                  </p>
+                  <h1 className="text-4xl lg:text-5xl font-bold text-slate-900 leading-tight group-hover:text-slate-800 transition-colors duration-200">
+                    Welcome back, {user.first_name || user.username}! 👋
+                  </h1>
+                  <div className="flex items-center space-x-2 mt-2">
+                    <div className="w-2 h-2 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-full animate-pulse"></div>
+                    <p className="text-lg text-slate-600 font-semibold">
+                      {isSuperuser ? 'Superuser Dashboard - Full System Access' :
+                       user.user_type === 'agronomist' ? 'System Agronomist Dashboard' : 'Farm User Dashboard'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col space-y-3">
+                  {isSuperuser && (
+                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-purple-50 to-purple-100/60 border border-purple-200/60 rounded-xl">
+                      <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-sm">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-purple-800">Superuser Access</p>
+                        <p className="text-xs text-purple-600">Full system control and privileges</p>
+                      </div>
+                    </div>
+                  )}
+                  {isAgronomist && !isSuperuser && (
+                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-emerald-50 to-emerald-100/60 border border-emerald-200/60 rounded-xl">
+                      <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-sm">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-emerald-800">Agronomist Access</p>
+                        <p className="text-xs text-emerald-600">System administration privileges active</p>
+                      </div>
+                    </div>
+                  )}
+                  {!isAgronomist && !isSuperuser && (
+                    <div className="flex items-center space-x-3 p-3 bg-gradient-to-r from-blue-50 to-blue-100/60 border border-blue-200/60 rounded-xl">
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-sm">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-blue-800">Farm User Access</p>
+                        <p className="text-xs text-blue-600">Manage your assigned farms and activities</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col items-start lg:items-end space-y-3">
+                <div className="px-6 py-4 bg-gradient-to-r from-slate-100/80 to-blue-100/80 rounded-2xl border border-slate-200/60 shadow-md">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-slate-500 to-slate-600 rounded-xl flex items-center justify-center shadow-sm">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3a1 1 0 011-1h6a1 1 0 011 1v4h3a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h3z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-700">
+                        {new Date().toLocaleDateString('en-US', { weekday: 'long' })}
+                      </p>
+                      <p className="text-xs text-slate-500 font-medium">
+                        {new Date().toLocaleDateString('en-US', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {/* Farms Stats Card */}
-          <div className="stats-card group">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+          <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl border border-slate-200/60 hover:border-slate-300/80 border-l-4 border-l-emerald-400 transition-all duration-300 ease-out p-6 hover:scale-[1.02]">
+            {/* Background gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-emerald-100/80 opacity-30 group-hover:opacity-40 transition-opacity duration-300" />
+
+            <div className="relative z-10 flex items-start justify-between">
+              <div className="flex-1 min-w-0 pr-4">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-200">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                     </svg>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 leading-tight">
+                      {isAgronomist || isSuperuser ? 'Total Farms' : 'My Farms'}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                    {isAdmin || isSuperuser ? 'Total Farms' : 'My Farms'}
-                  </p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalFarms}</p>
+
+                <div className="space-y-1">
+                  <p className="text-3xl font-bold text-slate-900 leading-tight">{stats.totalFarms}</p>
+                  <p className="text-xs text-slate-600 font-medium">Active and operational</p>
                 </div>
               </div>
-              <div className="text-xs text-slate-500 font-medium bg-emerald-50 px-2 py-1 rounded-full">
-                Active
+
+              <div className="flex-shrink-0 self-start">
+                <div className="px-3 py-1 bg-gradient-to-r from-emerald-100 to-emerald-200 text-emerald-700 text-xs font-bold rounded-full border border-emerald-300">
+                  Active
+                </div>
               </div>
             </div>
+
+            {/* Decorative corner element */}
+            <div className="absolute top-2 right-2 w-16 h-16 rounded-full bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           </div>
 
-          {/* Users Stats Card (Admin/Superuser Only) */}
-          {(isAdmin || isSuperuser) && (
-            <div className="stats-card group">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex-shrink-0">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+          {/* Users Stats Card (Agronomist/Superuser Only) */}
+          {(isAgronomist || isSuperuser) && (
+            <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl border border-slate-200/60 hover:border-slate-300/80 border-l-4 border-l-blue-400 transition-all duration-300 ease-out p-6 hover:scale-[1.02]">
+              {/* Background gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-blue-100/80 opacity-30 group-hover:opacity-40 transition-opacity duration-300" />
+
+              <div className="relative z-10 flex items-start justify-between">
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-200">
                       <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                       </svg>
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 leading-tight">
+                        Farm Users
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                      Farm Users
-                    </p>
-                    <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalUsers}</p>
+
+                  <div className="space-y-1">
+                    <p className="text-3xl font-bold text-slate-900 leading-tight">{stats.totalUsers}</p>
+                    <p className="text-xs text-slate-600 font-medium">Registered in system</p>
                   </div>
                 </div>
-                <div className="text-xs text-slate-500 font-medium bg-blue-50 px-2 py-1 rounded-full">
-                  Registered
+
+                <div className="flex-shrink-0 self-start">
+                  <div className="px-3 py-1 bg-gradient-to-r from-blue-100 to-blue-200 text-blue-700 text-xs font-bold rounded-full border border-blue-300">
+                    Registered
+                  </div>
                 </div>
               </div>
+
+              {/* Decorative corner element */}
+              <div className="absolute top-2 right-2 w-16 h-16 rounded-full bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
             </div>
           )}
 
           {/* Acres Stats Card */}
-          <div className="stats-card group">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="flex-shrink-0">
-                  <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+          <div className="group relative overflow-hidden bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg hover:shadow-xl border border-slate-200/60 hover:border-slate-300/80 border-l-4 border-l-amber-400 transition-all duration-300 ease-out p-6 hover:scale-[1.02]">
+            {/* Background gradient overlay */}
+            <div className="absolute inset-0 bg-gradient-to-br from-amber-50 to-amber-100/80 opacity-30 group-hover:opacity-40 transition-opacity duration-300" />
+
+            <div className="relative z-10 flex items-start justify-between">
+              <div className="flex-1 min-w-0 pr-4">
+                <div className="flex items-center space-x-3 mb-3">
+                  <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-200">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
                     </svg>
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 leading-tight">
+                      Total Acres
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
-                    Total Acres
-                  </p>
-                  <p className="text-3xl font-bold text-slate-900 mt-1">{stats.totalAcres.toFixed(2)}</p>
+
+                <div className="space-y-1">
+                  <p className="text-3xl font-bold text-slate-900 leading-tight">{stats.totalAcres.toFixed(2)}</p>
+                  <p className="text-xs text-slate-600 font-medium">Under management</p>
                 </div>
               </div>
-              <div className="text-xs text-slate-500 font-medium bg-amber-50 px-2 py-1 rounded-full">
-                Managed
+
+              <div className="flex-shrink-0 self-start">
+                <div className="px-3 py-1 bg-gradient-to-r from-amber-100 to-amber-200 text-amber-700 text-xs font-bold rounded-full border border-amber-300">
+                  Managed
+                </div>
               </div>
             </div>
+
+            {/* Decorative corner element */}
+            <div className="absolute top-2 right-2 w-16 h-16 rounded-full bg-gradient-to-br from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
           </div>
         </div>
 
-        {/* Admin Management Card (Superuser Only) */}
+        {/* Agronomist Management Card (Superuser Only) */}
         {isSuperuser && (
-          <div className="card p-6">
+          <div className="group bg-white/80 backdrop-blur-sm shadow-lg rounded-2xl border border-slate-200/60 hover:border-slate-300/80 p-6 transition-all duration-300">
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">Admin Management</h2>
-                <p className="text-slate-600">Create and manage system administrators</p>
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-sm">
+                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900 group-hover:text-slate-800 transition-colors duration-200">Agronomist Management</h2>
+                  <p className="text-sm text-slate-600 font-medium">Create and manage system agronomists</p>
+                </div>
               </div>
               <button
-                onClick={() => setShowCreateAdminModal(true)}
-                className="btn btn-primary"
+                onClick={() => setShowCreateAgronomistModal(true)}
+                className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all duration-200 hover:scale-105 flex items-center space-x-2"
               >
-                + Create Admin
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span>Create Agronomist</span>
               </button>
             </div>
-            <div className="text-center text-slate-500">
-              <svg className="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-              </svg>
-              <p>Use the "Create Admin" button to add new administrators to the system.</p>
+            <div className="text-center py-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-purple-200 rounded-2xl flex items-center justify-center mx-auto mb-4 group-hover:scale-105 transition-transform duration-200">
+                <svg className="w-8 h-8 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                </svg>
+              </div>
+              <p className="text-slate-600 font-medium">Use the "Create Agronomist" button to add new agronomists to the system.</p>
             </div>
           </div>
         )}
 
         {/* Recent Farms */}
-        <div className="card">
-          <div className="px-8 py-6 border-b border-slate-200/60">
+        <div className="group bg-white/80 backdrop-blur-sm shadow-lg rounded-2xl border border-slate-200/60 hover:border-slate-300/80 transition-all duration-300 overflow-hidden">
+          <div className="px-8 py-6 border-b border-slate-200/60 bg-gradient-to-r from-slate-50/80 to-white">
             <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-gradient-to-br from-violet-400 to-purple-500 rounded-xl flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform duration-200">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-bold text-slate-900">
-                    {isAdmin || isSuperuser ? 'Recent Farms' : 'My Farms'}
-                  </h3>
-                  <p className="text-sm text-slate-500">
-                    {isAdmin || isSuperuser ? 'Overview of all farms in the system' : 'Farms assigned to you'}
+                  <div className="flex items-center space-x-2 mb-1">
+                    <h3 className="text-xl font-bold text-slate-900 group-hover:text-slate-800 transition-colors duration-200">
+                      {isAgronomist || isSuperuser ? 'Recent Farms' : 'My Farms'}
+                    </h3>
+                    <div className="w-2 h-2 bg-gradient-to-r from-violet-400 to-purple-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-sm text-slate-600 font-medium">
+                    {isAgronomist || isSuperuser ? 'Overview of all farms in the system' : 'Farms assigned to you'}
                   </p>
                 </div>
               </div>
               {farms.length > 0 && (
                 <a
                   href="/farms"
-                  className="btn-secondary text-sm"
+                  className="px-5 py-2.5 bg-gradient-to-r from-violet-100 to-purple-100 hover:from-violet-200 hover:to-purple-200 text-violet-700 text-sm font-semibold rounded-xl border border-violet-200 hover:border-violet-300 transition-all duration-200 hover:scale-105 flex items-center space-x-2 shadow-sm hover:shadow-md"
                 >
-                  View All
-                  <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <span>View All</span>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </a>
@@ -348,9 +438,9 @@ const Dashboard = () => {
                 </div>
                 <h4 className="text-lg font-semibold text-slate-900 mb-2">No farms found</h4>
                 <p className="text-slate-500 mb-6">
-                  {isAdmin || isSuperuser ? 'Start by creating your first farm' : 'You haven\'t been assigned to any farms yet'}
+                  {isAgronomist || isSuperuser ? 'Start by creating your first farm' : 'You haven\'t been assigned to any farms yet'}
                 </p>
-                {(isAdmin || isSuperuser) && (
+                {(isAgronomist || isSuperuser) && (
                   <a href="/create-farm" className="btn-primary">
                     Create Farm
                     <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -367,7 +457,7 @@ const Dashboard = () => {
                       <th>Farm Name</th>
                       <th>Location</th>
                       <th>Size (Acres)</th>
-                      {(isAdmin || isSuperuser) && <th>Owner</th>}
+                      {(isAgronomist || isSuperuser) && <th>Owner</th>}
                       <th>Created</th>
                       <th></th>
                     </tr>
@@ -404,7 +494,7 @@ const Dashboard = () => {
                             </span>
                           </div>
                         </td>
-                        {(isAdmin || isSuperuser) && (
+                        {(isAgronomist || isSuperuser) && (
                           <td>
                             <div className="flex items-center">
                               <div className="w-6 h-6 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-full flex items-center justify-center mr-2">
@@ -442,8 +532,8 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Create Admin Modal - Cute & Responsive Design */}
-      {showCreateAdminModal && (
+      {/* Create Agronomist Modal - Cute & Responsive Design */}
+      {showCreateAgronomistModal && (
         <div 
           className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
           style={{
@@ -460,13 +550,13 @@ const Dashboard = () => {
             <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-purple-600 px-6 py-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <span>👤</span>
-                Create Admin
+                Create Agronomist
               </h2>
               <button
                 onClick={() => {
-                  setShowCreateAdminModal(false);
+                  setShowCreateAgronomistModal(false);
                   setShowPassword(false);
-                  setAdminFormErrors({});
+                  setAgronomistFormErrors({});
                 }}
                 className="w-8 h-8 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30 flex items-center justify-center text-white transition-all duration-200 hover:scale-110"
               >
@@ -479,7 +569,7 @@ const Dashboard = () => {
             {/* Scrollable Form Content */}
             <div className="overflow-y-auto max-h-[calc(90vh-140px)]">
               <div className="p-6">
-                <form onSubmit={handleCreateAdmin} className="space-y-5">
+                <form onSubmit={handleCreateAgronomist} className="space-y-5">
                   {/* Username Field */}
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-2 uppercase tracking-wide">
@@ -494,21 +584,21 @@ const Dashboard = () => {
                       <input
                         type="text"
                         name="username"
-                        value={adminFormData.username}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.username}
+                        onChange={handleAgronomistFormChange}
                         className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          adminFormErrors.username ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                          agronomistFormErrors.username ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
                         }`}
                         placeholder="Enter username"
                         autoComplete="username"
                       />
                     </div>
-                    {adminFormErrors.username && (
+                    {agronomistFormErrors.username && (
                       <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        {adminFormErrors.username}
+                        {agronomistFormErrors.username}
                       </p>
                     )}
                   </div>
@@ -527,21 +617,21 @@ const Dashboard = () => {
                       <input
                         type="email"
                         name="email"
-                        value={adminFormData.email}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.email}
+                        onChange={handleAgronomistFormChange}
                         className={`w-full pl-10 pr-4 py-3 bg-gray-50 border rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          adminFormErrors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                          agronomistFormErrors.email ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
                         }`}
-                        placeholder="admin@example.com"
+                        placeholder="agronomist@example.com"
                         autoComplete="email"
                       />
                     </div>
-                    {adminFormErrors.email && (
+                    {agronomistFormErrors.email && (
                       <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        {adminFormErrors.email}
+                        {agronomistFormErrors.email}
                       </p>
                     )}
                   </div>
@@ -555,8 +645,8 @@ const Dashboard = () => {
                       <input
                         type="text"
                         name="first_name"
-                        value={adminFormData.first_name}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.first_name}
+                        onChange={handleAgronomistFormChange}
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="John"
                         autoComplete="given-name"
@@ -569,8 +659,8 @@ const Dashboard = () => {
                       <input
                         type="text"
                         name="last_name"
-                        value={adminFormData.last_name}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.last_name}
+                        onChange={handleAgronomistFormChange}
                         className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="Doe"
                         autoComplete="family-name"
@@ -593,8 +683,8 @@ const Dashboard = () => {
                       <input
                         type="tel"
                         name="phone_number"
-                        value={adminFormData.phone_number}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.phone_number}
+                        onChange={handleAgronomistFormChange}
                         className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         placeholder="+1 (555) 123-4567"
                         autoComplete="tel"
@@ -616,10 +706,10 @@ const Dashboard = () => {
                       <input
                         type={showPassword ? "text" : "password"}
                         name="password"
-                        value={adminFormData.password}
-                        onChange={handleAdminFormChange}
+                        value={agronomistFormData.password}
+                        onChange={handleAgronomistFormChange}
                         className={`w-full pl-10 pr-12 py-3 bg-gray-50 border rounded-xl text-sm placeholder-gray-400 transition-all duration-200 hover:bg-gray-100 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                          adminFormErrors.password ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
+                          agronomistFormErrors.password ? 'border-red-300 focus:ring-red-500' : 'border-gray-200'
                         }`}
                         placeholder="Min 8 characters"
                         autoComplete="new-password"
@@ -642,12 +732,12 @@ const Dashboard = () => {
                         )}
                       </button>
                     </div>
-                    {adminFormErrors.password && (
+                    {agronomistFormErrors.password && (
                       <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                         </svg>
-                        {adminFormErrors.password}
+                        {agronomistFormErrors.password}
                       </p>
                     )}
                   </div>
@@ -661,9 +751,9 @@ const Dashboard = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    setShowCreateAdminModal(false);
+                    setShowCreateAgronomistModal(false);
                     setShowPassword(false);
-                    setAdminFormErrors({});
+                    setAgronomistFormErrors({});
                   }}
                   className="w-full sm:w-auto px-6 py-3 bg-white border border-gray-300 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-all duration-200 hover:scale-105"
                 >
@@ -671,17 +761,18 @@ const Dashboard = () => {
                 </button>
                 <button
                   type="submit"
-                  onClick={handleCreateAdmin}
+                  onClick={handleCreateAgronomist}
                   className="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-full text-sm font-medium hover:from-green-600 hover:to-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 flex items-center justify-center gap-2"
                 >
                   <span>✨</span>
-                  Create Admin
+                  Create Agronomist
                 </button>
               </div>
             </div>
           </div>
         </div>
       )}
+      </div>
     </Layout>
   );
 };

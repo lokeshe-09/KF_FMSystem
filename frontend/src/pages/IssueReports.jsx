@@ -543,7 +543,7 @@ const IssueReports = () => {
                     >
                       <option value="">Choose issue type...</option>
                       <option value="pest">🐛 Pest Infestation</option>
-                      <option value="disease">🦠 Plant Disease</option>
+                      <option value="disease">🦠 Plant Disease & Pest</option>
                       <option value="nutrient_deficiency">🌱 Nutrient Deficiency</option>
                       <option value="equipment_malfunction">🔧 Equipment Issue</option>
                       <option value="water_leak">💧 Water Leak</option>

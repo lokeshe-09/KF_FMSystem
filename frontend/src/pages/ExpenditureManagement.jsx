@@ -41,29 +41,29 @@ const ExpenditureManagement = () => {
 
   // Categories and Payment Methods
   const categories = [
-    { value: 'seeds_plants', label: '🌱 Seeds/Plants' },
-    { value: 'fertilizers', label: '💩 Fertilizers' },
-    { value: 'pesticides', label: '🐛 Pesticides/Chemicals' },
-    { value: 'equipment', label: '🔧 Equipment/Tools' },
-    { value: 'labor', label: '👷 Labor' },
-    { value: 'irrigation', label: '💧 Irrigation/Water' },
-    { value: 'fuel', label: '⛽ Fuel' },
-    { value: 'maintenance', label: '🔨 Maintenance' },
-    { value: 'transportation', label: '🚚 Transportation' },
-    { value: 'utilities', label: '💡 Utilities' },
-    { value: 'packaging', label: '📦 Packaging' },
-    { value: 'marketing', label: '📢 Marketing' },
-    { value: 'others', label: '📂 Others' },
+    { value: 'seeds_plants', label: 'Seeds/Plants' },
+    { value: 'fertilizers', label: 'Fertilizers' },
+    { value: 'pesticides', label: 'Pesticides/Chemicals' },
+    { value: 'equipment', label: 'Equipment/Tools' },
+    { value: 'labor', label: 'Labor' },
+    { value: 'irrigation', label: 'Irrigation/Water' },
+    { value: 'fuel', label: 'Fuel' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'transportation', label: 'Transportation' },
+    { value: 'utilities', label: 'Utilities' },
+    { value: 'packaging', label: 'Packaging' },
+    { value: 'marketing', label: 'Marketing' },
+    { value: 'others', label: 'Others' },
   ];
 
   const paymentMethods = [
-    { value: 'cash', label: '💵 Cash' },
-    { value: 'bank_transfer', label: '🏦 Bank Transfer' },
-    { value: 'upi', label: '📱 UPI' },
-    { value: 'credit_card', label: '💳 Credit Card' },
-    { value: 'debit_card', label: '💳 Debit Card' },
-    { value: 'cheque', label: '📝 Cheque' },
-    { value: 'others', label: '📂 Others' },
+    { value: 'cash', label: 'Cash' },
+    { value: 'bank_transfer', label: 'Bank Transfer' },
+    { value: 'upi', label: 'UPI' },
+    { value: 'credit_card', label: 'Credit Card' },
+    { value: 'debit_card', label: 'Debit Card' },
+    { value: 'cheque', label: 'Cheque' },
+    { value: 'others', label: 'Others' },
   ];
 
   useEffect(() => {
@@ -339,7 +339,7 @@ const ExpenditureManagement = () => {
                 value={filters.payment_method}
                 onChange={(e) => fetchExpenditures({payment_method: e.target.value})}
               >
-                <option value="">All Payment Methods</option>
+                <option value="">Payment Methods</option>
                 {paymentMethods.map((pm) => (
                   <option key={pm.value} value={pm.value}>
                     {pm.label}
@@ -668,7 +668,7 @@ const ExpenditureManagement = () => {
                     <option value="">Select Farm</option>
                     {farms.map((farm) => (
                       <option key={farm.id} value={farm.id}>
-                        🌾 {farm.name}
+                        {farm.name}
                       </option>
                     ))}
                   </select>
